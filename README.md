@@ -42,6 +42,11 @@ claude plugin install chess-break --marketplace a-narquel/chess-break
 
 In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `a-narquel/chess-break`, then Add plugin.
 
+**Back to Claude** opens the conversation. Browsers don't let a page switch to a tab that is
+already open, so the optional browser extension in `extension/` does it: it switches to your open
+Claude tab, and with **Stop me when Claude replies** ticked it switches as soon as Claude replies.
+See `extension/README.md` to install it.
+
 ## Puzzles
 
 There are 682: 519 mate in 1 and 163 mate in 2, made from computer self-play and checked with
