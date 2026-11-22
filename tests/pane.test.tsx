@@ -185,3 +185,19 @@ test('the board sits above the prompt from a prompt until you go back', async ($
   expect(await ui.find({ type: 'Svg' })).toBeFalsy()
   await ui.unmount()
 })
+
+test('Bigger and Smaller resize the board in the band and are remembered', async ($, on) => {
+  const kept: Record<string, unknown> = {}
+  on('store.set', (_, e) => { kept[e.key] = e.value; return { value: undefined } })
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('clock.now', () => ({ value: 1000 }))
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const width = async () => ((await ui.find({ type: 'Svg' })) as { props?: { width?: number } } | undefined)?.props?.width ?? 0
+  const before = await width()
+  await ui.press({ key: 'zoom-out' })
+  const smaller = await width()
+  expect(smaller).toBeLessThan(before)
+  expect(kept.zoom).toBe(0.9)
+  await ui.unmount()
+})

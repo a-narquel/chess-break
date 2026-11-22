@@ -8,6 +8,8 @@ const MARK: Record<string, string> = {
   sel: 'rgba(245, 220, 80, .9)',
   hint: 'rgba(90, 170, 240, .75)',
   over: 'rgba(255, 255, 255, .55)',
+  mate: 'rgba(224, 60, 50, .75)',
+  bad: 'rgba(224, 80, 60, .55)',
 }
 const GLYPH: Record<string, string> = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
 const FONT = "'DejaVu Sans', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', 'Arial Unicode MS', serif"

@@ -8,6 +8,8 @@ export type Game = {
   hinted: boolean
   missed: boolean
   line: string[]
+  startedAt: number
+  wrongSq: string | null
 }
 export type Stats = { solved: number; streak: number; best: number }
 export type Working = 'idle' | 'working' | 'done' | 'playing'
@@ -20,6 +22,7 @@ declare module 'claude-code' {
       stats: Shaped<Stats>
       working: Working
       drag: Drag
+      zoom: number
     }
   }
 }

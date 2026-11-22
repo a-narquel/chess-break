@@ -21,11 +21,14 @@ const fresh = (index: number): Game => ({
   hinted: false,
   missed: false,
   line: [],
+  startedAt: 0,
+  wrongSq: null,
 })
 
-const game = atom({ plugin: 'chess-break', key: 'game' } as const, fresh(0), { shape: 'game-2' })
+const game = atom({ plugin: 'chess-break', key: 'game' } as const, fresh(0), { shape: 'game-3' })
 const stats = atom({ plugin: 'chess-break', key: 'stats' } as const, { solved: 0, streak: 0, best: 0 }, { shape: 'stats-1' })
 const working = atom({ plugin: 'chess-break', key: 'working' } as const, 'idle' as Working)
+const zoom = atom({ plugin: 'chess-break', key: 'zoom' } as const, 1)
 const dragging = atom({ plugin: 'chess-break', key: 'drag' } as const, null as Drag)
 
 // A click can reach both the drag layer and the square's button beneath it:
@@ -59,7 +62,18 @@ function open($: EngineInterface) {
   return $.ui.open({ id: PANE, title: TITLE, columns: 240 })
 }
 
+// The time, or 0 where it cannot be read: the timer is a nicety, never a reason to drop a move.
+async function nowMs($: EngineInterface): Promise<number> {
+  return $.clock.now().catch(() => 0)
+}
+
+function clockText(ms: number) {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 async function move($: EngineInterface, from: string, to: string) {
+  const now = await nowMs($)
   let outcome = 'none' as 'none' | 'wrong' | 'solved'
   await update($, game, g => {
     if (g.isSolved) return g
@@ -67,19 +81,19 @@ async function move($: EngineInterface, from: string, to: string) {
     const m = matches(expected(p, g), from, to)
     if (m === undefined) {
       outcome = 'wrong'
-      return { ...g, selected: null, missed: true, tone: 'bad' as const, message: `${san(board, from + to)} doesn't force mate. Try again.` }
+      return { ...g, selected: null, missed: true, wrongSq: to, tone: 'bad' as const, message: `${san(board, from + to)} doesn't force mate. Try again.` }
     }
     if (g.stage === 0 && p.n === 2 && p.r !== undefined) {
       const after = applyMove(board, m)
       return {
-        ...g, stage: 1 as const, selected: null, line: [m, p.r], tone: 'good' as const,
+        ...g, stage: 1 as const, selected: null, wrongSq: null, line: [m, p.r], tone: 'good' as const,
         message: `${san(board, m)}! They reply ${san(after, p.r)}. Now finish it.`,
       }
     }
     outcome = 'solved'
     return {
-      ...g, stage: 2 as const, selected: null, isSolved: true, line: [...g.line, m], tone: 'good' as const,
-      message: `${san(board, m)}# Checkmate!`,
+      ...g, stage: 2 as const, selected: null, wrongSq: null, isSolved: true, line: [...g.line, m], tone: 'good' as const,
+      message: `${san(board, m)}# Checkmate!${g.startedAt > 0 && now > 0 ? ` Solved in ${clockText(now - g.startedAt)}.` : ''}`,
     }
   })
   const g = await read($, game)
@@ -95,7 +109,7 @@ async function move($: EngineInterface, from: string, to: string) {
 }
 
 async function tap($: EngineInterface, sq: string) {
-  const now = await $.clock.now()
+  const now = await nowMs($)
   if (lastTap.sq === sq && now - lastTap.at < 400) return
   lastTap = { sq, at: now }
   const g = await read($, game)
@@ -104,7 +118,7 @@ async function tap($: EngineInterface, sq: string) {
   const piece = board[sq]
   const isOwn = piece !== undefined && isWhite(piece) === (toMove === 'w')
   if (isOwn) {
-    await update($, game, x => ({ ...x, selected: x.selected === sq ? null : sq }))
+    await update($, game, x => ({ ...x, wrongSq: null, selected: x.selected === sq ? null : sq }))
   } else if (g.selected !== null) {
     await move($, g.selected, sq)
   }
@@ -113,7 +127,8 @@ async function tap($: EngineInterface, sq: string) {
 async function nextPuzzle($: EngineInterface) {
   const g = await read($, game)
   if (!g.isSolved) await update($, stats, s => ({ ...s, streak: 0 }))
-  await update($, game, x => fresh(x.index + 1))
+  const now = await nowMs($)
+  await update($, game, x => ({ ...fresh(x.index + 1), startedAt: now }))
   await save($)
 }
 
@@ -134,6 +149,8 @@ async function showSolution($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'chess', description: 'Open the chess puzzle pane' })
+    const storedZoom = await $.store.get('zoom')
+    if (typeof storedZoom === 'number') await update($, zoom, () => storedZoom)
     const storedIndex = await $.store.get('index')
     const storedStats = (await $.store.get('stats')) as Stats | undefined
     const g = await read($, game)
@@ -154,6 +171,8 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     const ran = await next(e)
     await update($, working, () => 'working' as Working)
+    const now = await nowMs($)
+    await update($, game, x => (x.startedAt === 0 && !x.isSolved ? { ...x, startedAt: now } : x))
     return ran
   })
 
@@ -210,13 +229,17 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
     const flip = toMove === 'b'
     const hint = g.hinted && !g.isSolved ? expected(p, g)[0]?.slice(0, 2) : undefined
     const squares = Array.from({ length: 64 }, (_, i) => squareAt(i, flip))
+    const loser = toMove === 'w' ? 'k' : 'K'
+    const mateSq = g.isSolved ? Object.keys(board).find(sq => board[sq] === loser) : undefined
     const markOf = (sq: string) =>
-      drag && sq === drag.over && sq !== drag.from ? 'over'
+      sq === mateSq ? 'mate'
+      : sq === g.wrongSq ? 'bad'
+      : drag && sq === drag.over && sq !== drag.from ? 'over'
       : sq === g.selected || (drag && sq === drag.from) ? 'sel'
       : sq === hint ? 'hint'
       : last.includes(sq) ? 'last'
       : ''
-    const MARK: Record<string, string> = { sel: '#e9cf4a', hint: '#5fb0ef', last: '#d6cf7a', over: '#f6f2e2' }
+    const MARK: Record<string, string> = { sel: '#e9cf4a', hint: '#5fb0ef', last: '#d6cf7a', over: '#f6f2e2', mate: '#e06a5a', bad: '#e88b7d' }
 
     // A text cell is about 2.4 times taller than wide, so a square is 2.4 columns per row.
     // Fill the pane's width, leaving rows under the board for the text and buttons.
@@ -227,7 +250,8 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
     const rowsFree = Math.max(8, sideBySide ? roomRows - 1 : roomRows - (isBand ? 9 : 12))
     // In the band, rows are a hard limit: a row there is drawn about 16 to 20
     // pixels tall, so size by the smaller and keep two rows spare.
-    const bandPx = (Math.max(8, sideBySide ? roomRows - 2 : roomRows - 10)) * 16
+    const z = await read($, zoom)
+    const bandPx = Math.round((Math.max(8, sideBySide ? roomRows - 1 : roomRows - 10)) * 19 * z)
     const byWidth = Math.floor((cols - 2) / 8)
     const cellH = Math.max(1, Math.min(Math.round(byWidth / 2.4), Math.floor(rowsFree / 8)))
     const cellW = Math.max(3, Math.min(byWidth, Math.round(cellH * 2.4)))
@@ -294,7 +318,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         // As large as the pane allows: a text column is about 8.4 pixels wide and
         // a row about 20 tall; leave rows for the text and buttons.
         const px = isBand
-          ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 40) * 8.4 : cols * 8.4 - 8, bandPx, 900)))
+          ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, bandPx, 1100)))
           : Math.round(Math.max(220, Math.min(cols * 8.4 - 8, (rowsFree + 1) * 20, 960)))
         const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
         boardTree = (
@@ -308,7 +332,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
         const vsPx = isBand
-          ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 40) * 7.5 : cols * 7.5, bandPx, 900)))
+          ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 7.5 : cols * 7.5, bandPx, 1100)))
           : Math.round(Math.max(220, Math.min(cols * 7.5, (rowsFree + 1) * 20, 900)))
         // A phone fits the picture to its width; VS Code sizes it to the pane.
         boardTree = e.surface === 'mobile'
@@ -397,7 +421,25 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         )}
       </Box>
     )
-    const score = <Text dimColor>Solved {s.solved} · streak {s.streak} · best {s.best}</Text>
+    const setZoom = async (f: (z: number) => number) => {
+      const next = Math.round(Math.max(0.5, Math.min(1.8, f(await read($, zoom)))) * 100) / 100
+      await update($, zoom, () => next)
+      await $.store.set('zoom', next)
+    }
+    const score = (
+      <Box flexDirection="column" gap={1}>
+        <Text>
+          {s.streak >= 2 ? <Text color="#f08c2e" bold>🔥 {s.streak} in a row  </Text> : null}
+          <Text dimColor>Solved {s.solved} · best streak {s.best}</Text>
+        </Text>
+        {isBand && e.surface !== 'terminal' ? (
+          <Box flexDirection="row" gap={1}>
+            <Button key="zoom-out" label="− Smaller" onPress={() => setZoom(x => x - 0.1)} />
+            <Button key="zoom-in" label="+ Bigger" onPress={() => setZoom(x => x + 0.1)} />
+          </Box>
+        ) : null}
+      </Box>
+    )
 
     if (sideBySide) {
       return (
