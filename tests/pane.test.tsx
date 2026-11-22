@@ -168,15 +168,17 @@ test('the board sits above the prompt from a prompt until you go back', async ($
 
   await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
   for (const surface of ['desktop', 'vscode', 'mobile', 'terminal'] as const) {
-    ui = await $.ui.mount({ ...BAND, surface })
-    expect((await ui.find({ type: 'Text', text: /Mate in/ }))).toBeTruthy()
-    expect((await ui.find({ type: 'Text', text: /Claude is working/ }))).toBeTruthy()
-    await ui.unmount()
+    const each = await $.ui.mount({ ...BAND, surface })
+    expect((await each.find({ type: 'Text', text: /Mate in/ }))).toBeTruthy()
+    expect((await each.find({ type: 'Text', text: /Claude is working/ }))).toBeTruthy()
+    await each.unmount()
   }
 
   await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
   ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect((await ui.find({ type: 'Text', text: /Claude's done/ }))).toBeTruthy()
+  await ui.press({ key: 'stay' })
+  expect(await ui.find({ type: 'Svg' })).toBeTruthy()
   await ui.press({ key: 'back' })
   await ui.unmount()
   ui = await $.ui.mount({ ...BAND, surface: 'desktop' })

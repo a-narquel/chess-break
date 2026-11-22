@@ -10,7 +10,7 @@ export type Game = {
   line: string[]
 }
 export type Stats = { solved: number; streak: number; best: number }
-export type Working = 'idle' | 'working' | 'done'
+export type Working = 'idle' | 'working' | 'done' | 'playing'
 export type Drag = { from: string; over: string } | null
 
 declare module 'claude-code' {

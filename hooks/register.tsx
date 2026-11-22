@@ -222,8 +222,12 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
     // Fill the pane's width, leaving rows under the board for the text and buttons.
     const cols = e.props.bodyColumns ?? 40
     const roomRows = 'maxRows' in e.props ? e.props.maxRows : (e.props.scroll?.bodyRows ?? 40)
-    const sideBySide = place === 'band' && cols >= 90
-    const rowsFree = Math.max(8, sideBySide ? roomRows - 2 : roomRows - 12)
+    const isBand = place === 'band'
+    const sideBySide = isBand && cols >= 70
+    const rowsFree = Math.max(8, sideBySide ? roomRows - 1 : roomRows - (isBand ? 9 : 12))
+    // In the band, rows are a hard limit: a row there is drawn about 16 to 20
+    // pixels tall, so size by the smaller and keep two rows spare.
+    const bandPx = (Math.max(8, sideBySide ? roomRows - 2 : roomRows - 10)) * 16
     const byWidth = Math.floor((cols - 2) / 8)
     const cellH = Math.max(1, Math.min(Math.round(byWidth / 2.4), Math.floor(rowsFree / 8)))
     const cellW = Math.max(3, Math.min(byWidth, Math.round(cellH * 2.4)))
@@ -289,7 +293,9 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       if (e.surface === 'desktop') {
         // As large as the pane allows: a text column is about 8.4 pixels wide and
         // a row about 20 tall; leave rows for the text and buttons.
-        const px = Math.round(Math.max(220, Math.min(sideBySide ? (cols - 42) * 8.4 : cols * 8.4 - 8, (rowsFree + 1) * 20, 960)))
+        const px = isBand
+          ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 40) * 8.4 : cols * 8.4 - 8, bandPx, 900)))
+          : Math.round(Math.max(220, Math.min(cols * 8.4 - 8, (rowsFree + 1) * 20, 960)))
         const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
         boardTree = (
           <Box alignSelf="flex-start">
@@ -301,15 +307,17 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         )
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
-        const vsPx = Math.round(Math.max(220, Math.min(sideBySide ? (cols - 42) * 7.5 : cols * 7.5, (rowsFree + 1) * 20, 900)))
+        const vsPx = isBand
+          ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 40) * 7.5 : cols * 7.5, bandPx, 900)))
+          : Math.round(Math.max(220, Math.min(cols * 7.5, (rowsFree + 1) * 20, 900)))
         // A phone fits the picture to its width; VS Code sizes it to the pane.
         boardTree = e.surface === 'mobile'
-          ? <Svg source={source} alt={alt} />
+          ? (isBand ? <Svg source={source} alt={alt} width={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} height={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} /> : <Svg source={source} alt={alt} />)
           : <Svg source={source} alt={alt} width={vsPx} height={vsPx} />
       }
       // Tap buttons: the way to move where a drag cannot reach the board, and a
       // second way everywhere else.
-      if (!g.isSolved) {
+      if (!g.isSolved && !(isBand && e.surface === 'desktop')) {
         const sel = g.selected
         const pieces = squares.filter(sq => own[squares.indexOf(sq)] && movesFrom(sq).length > 0)
         picker = sel === null ? (
@@ -345,20 +353,24 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       )
     }
 
+    const goBack = async () => {
+      await update($, working, () => 'idle' as Working)
+      if (place === 'pane') await $.ui.close({ id: PANE })
+    }
     const banner =
       w === 'done' ? (
-        <Box flexDirection="column" gap={1} borderStyle="round" borderColor="#4cc27f" paddingX={1}>
+        <Box flexDirection="row" gap={1} flexWrap="wrap" alignItems="center">
           <Text color="#4cc27f" bold>✔ Claude's done.</Text>
-          <Box flexDirection="row" gap={1}>
-            <Button key="back" label="Back to conversation" variant="primary" hotkey="b" onPress={async () => {
-              await update($, working, () => 'idle' as Working)
-              if (place === 'pane') await $.ui.close({ id: PANE })
-            }} />
-            <Button key="stay" label="Finish puzzle" onPress={() => update($, working, () => 'idle' as Working)} />
-          </Box>
+          <Button key="back" label="Back to conversation" variant="primary" hotkey="b" onPress={goBack} />
+          <Button key="stay" label="Finish puzzle" onPress={() => update($, working, () => 'playing' as Working)} />
         </Box>
       ) : w === 'working' ? (
         <Text color="#d9a440">⏳ Claude is working. Find the mate.</Text>
+      ) : w === 'playing' ? (
+        <Box flexDirection="row" gap={1} alignItems="center">
+          <Text color="#4cc27f">✔ Claude replied.</Text>
+          <Button key="back" label="Back to conversation" hotkey="b" onPress={goBack} />
+        </Box>
       ) : null
 
     const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
