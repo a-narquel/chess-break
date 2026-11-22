@@ -143,3 +143,43 @@ test('the desktop board is a picture, and a drag reported over it plays the move
   expect((await ui.find({ type: 'Text', text: /Checkmate/ }))?.text).toContain('Checkmate')
   await ui.unmount()
 })
+
+const BAND = {
+  plugin: 'chess-break',
+  component: 'AbovePrompt',
+  requestId: 'band',
+  props: {
+    hasSurvey: false, isCollapsed: false, isWorking: true, maxRows: 26, bodyColumns: 140,
+    scroll: { offset: 0, bodyRows: 25 }, view: {},
+  },
+} as const
+
+test('the board sits above the prompt from a prompt until you go back', async ($, on) => {
+  on('store.set', () => ({ value: undefined }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  on('ui.notify', () => ({ value: { isSent: false, reason: 'no-surface' } }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.render', ($, e) => { const { Text } = $.ui.resolve(e); return <Text>engine</Text> })
+
+  let ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ type: 'Svg' })).toBeFalsy()
+  await ui.unmount()
+
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  for (const surface of ['desktop', 'vscode', 'mobile', 'terminal'] as const) {
+    ui = await $.ui.mount({ ...BAND, surface })
+    expect((await ui.find({ type: 'Text', text: /Mate in/ }))).toBeTruthy()
+    expect((await ui.find({ type: 'Text', text: /Claude is working/ }))).toBeTruthy()
+    await ui.unmount()
+  }
+
+  await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
+  ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /Claude's done/ }))).toBeTruthy()
+  await ui.press({ key: 'back' })
+  await ui.unmount()
+  ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await ui.find({ type: 'Svg' })).toBeFalsy()
+  await ui.unmount()
+})

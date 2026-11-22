@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderInput } from 'claude-code'
 
 import type { Drag, Game, Stats, Working } from '../types'
 import type { BoardProps } from './board'
@@ -154,8 +154,6 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     const ran = await next(e)
     await update($, working, () => 'working' as Working)
-    const panes = await $.ui.panes()
-    if (!panes.some(pane => pane.id === PANE)) void open($)
     return ran
   })
 
@@ -192,7 +190,18 @@ export const register: Register = on => {
     return {}
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => drawGame($, e, 'pane'))
+
+  // The board's home: the band between the conversation and the prompt box,
+  // as wide as the conversation, shown from a prompt until you go back.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const w = await read($, working)
+    if (e.props.hasSurvey || w === 'idle') return next(e)
+    return drawGame($, e, 'band')
+  })
+}
+
+async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt'>, place: 'pane' | 'band') {
     const g = await read($, game)
     const s = await read($, stats)
     const w = await read($, working)
@@ -212,7 +221,9 @@ export const register: Register = on => {
     // A text cell is about 2.4 times taller than wide, so a square is 2.4 columns per row.
     // Fill the pane's width, leaving rows under the board for the text and buttons.
     const cols = e.props.bodyColumns ?? 40
-    const rowsFree = Math.max(10, (e.props.scroll?.bodyRows ?? 40) - 12)
+    const roomRows = 'maxRows' in e.props ? e.props.maxRows : (e.props.scroll?.bodyRows ?? 40)
+    const sideBySide = place === 'band' && cols >= 90
+    const rowsFree = Math.max(8, sideBySide ? roomRows - 2 : roomRows - 12)
     const byWidth = Math.floor((cols - 2) / 8)
     const cellH = Math.max(1, Math.min(Math.round(byWidth / 2.4), Math.floor(rowsFree / 8)))
     const cellW = Math.max(3, Math.min(byWidth, Math.round(cellH * 2.4)))
@@ -278,8 +289,7 @@ export const register: Register = on => {
       if (e.surface === 'desktop') {
         // As large as the pane allows: a text column is about 8.4 pixels wide and
         // a row about 20 tall; leave rows for the text and buttons.
-        const rows = e.props.scroll?.bodyRows ?? 40
-        const px = Math.round(Math.max(280, Math.min(cols * 8.4 - 8, (rows - 11) * 20, 960)))
+        const px = Math.round(Math.max(220, Math.min(sideBySide ? (cols - 42) * 8.4 : cols * 8.4 - 8, (rowsFree + 1) * 20, 960)))
         const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
         boardTree = (
           <Box alignSelf="flex-start">
@@ -291,10 +301,11 @@ export const register: Register = on => {
         )
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
+        const vsPx = Math.round(Math.max(220, Math.min(sideBySide ? (cols - 42) * 7.5 : cols * 7.5, (rowsFree + 1) * 20, 900)))
         // A phone fits the picture to its width; VS Code sizes it to the pane.
         boardTree = e.surface === 'mobile'
           ? <Svg source={source} alt={alt} />
-          : <Svg source={source} alt={alt} width={Math.round(Math.max(240, Math.min(cols * 7.5, 900)))} height={Math.round(Math.max(240, Math.min(cols * 7.5, 900)))} />
+          : <Svg source={source} alt={alt} width={vsPx} height={vsPx} />
       }
       // Tap buttons: the way to move where a drag cannot reach the board, and a
       // second way everywhere else.
@@ -341,7 +352,7 @@ export const register: Register = on => {
           <Box flexDirection="row" gap={1}>
             <Button key="back" label="Back to conversation" variant="primary" hotkey="b" onPress={async () => {
               await update($, working, () => 'idle' as Working)
-              await $.ui.close({ id: PANE })
+              if (place === 'pane') await $.ui.close({ id: PANE })
             }} />
             <Button key="stay" label="Finish puzzle" onPress={() => update($, working, () => 'idle' as Working)} />
           </Box>
@@ -353,31 +364,53 @@ export const register: Register = on => {
     const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
     const prompt = g.message || (canDrag ? 'Drag a piece to its square, or click it and then the square.' : 'Tap a piece below, then where it goes.')
 
+    const title = (
+      <Text bold>
+        Mate in {p.n} · {side} to move <Text dimColor>#{g.index + 1} of {PUZZLES.length}</Text>
+      </Text>
+    )
+    const buttons = (
+      <Box flexDirection="row" gap={1} flexWrap="wrap">
+        {g.isSolved ? (
+          <Button key="next" label="Next puzzle" variant="primary" hotkey="n" onPress={() => nextPuzzle($)} />
+        ) : (
+          <Box flexDirection="row" gap={1}>
+            <Button key="hint" label="Hint" hotkey="h" onPress={async () => {
+              await update($, stats, st => ({ ...st, streak: 0 }))
+              await update($, game, x => ({ ...x, hinted: true, tone: 'plain' as const, message: 'The highlighted piece moves first.' }))
+            }} />
+            <Button key="show" label="Solution" onPress={() => showSolution($)} />
+            <Button key="skip" label="Skip" onPress={() => nextPuzzle($)} />
+          </Box>
+        )}
+      </Box>
+    )
+    const score = <Text dimColor>Solved {s.solved} · streak {s.streak} · best {s.best}</Text>
+
+    if (sideBySide) {
+      return (
+        <Box flexDirection="row" gap={2}>
+          {boardTree}
+          <Box flexDirection="column" gap={1} flexShrink={1} minWidth={30}>
+            {banner}
+            {title}
+            <Text color={toneColor}>{prompt}</Text>
+            {picker}
+            {buttons}
+            {score}
+          </Box>
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column" gap={1}>
         {banner}
-        <Text bold>
-          Mate in {p.n} · {side} to move <Text dimColor>#{g.index + 1} of {PUZZLES.length}</Text>
-        </Text>
+        {title}
         {boardTree}
         <Text color={toneColor}>{prompt}</Text>
         {picker}
-        <Box flexDirection="row" gap={1}>
-          {g.isSolved ? (
-            <Button key="next" label="Next puzzle" variant="primary" hotkey="n" onPress={() => nextPuzzle($)} />
-          ) : (
-            <Box flexDirection="row" gap={1}>
-              <Button key="hint" label="Hint" hotkey="h" onPress={async () => {
-                await update($, stats, st => ({ ...st, streak: 0 }))
-                await update($, game, x => ({ ...x, hinted: true, tone: 'plain' as const, message: 'The highlighted piece moves first.' }))
-              }} />
-              <Button key="show" label="Solution" onPress={() => showSolution($)} />
-              <Button key="skip" label="Skip" onPress={() => nextPuzzle($)} />
-            </Box>
-          )}
-        </Box>
-        <Text dimColor>Solved {s.solved} · streak {s.streak} · best {s.best}</Text>
+        {buttons}
+        {score}
       </Box>
     )
-  })
 }

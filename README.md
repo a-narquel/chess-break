@@ -2,10 +2,11 @@
 
 A Claude Code mod that keeps you thinking between prompts instead of reaching for your phone.
 
-When you send a prompt, a **Chess break** pane opens with one of 682 mate-in-1 or mate-in-2 puzzles,
-drawn as a full chess board that grows to fill the pane (click the pane's expand button for the
-largest board). When Claude replies, the pane shows **Claude's done** with two buttons:
-**Back to conversation** closes the pane, **Finish puzzle** lets you keep playing.
+When you send a prompt, a chess board appears right in the conversation, between the chat and
+the prompt box, with one of 682 mate-in-1 or mate-in-2 puzzles. It stays in place while Claude's
+reply scrolls above it. When Claude replies, **Claude's done** appears beside the board with two
+buttons: **Back to conversation** puts the board away until your next prompt, **Finish puzzle**
+lets you keep playing. `/chess` also opens the board in a side pane, if you ever want that.
 
 How you move, by where you run Claude Code:
 
@@ -15,7 +16,7 @@ How you move, by where you run Claude Code:
 | VS Code, phone app | drawn board | tap a piece button, then a square button |
 | Terminal | board in text cells | drag or click with the mouse |
 
-Your streak and place in the puzzle set are kept between sessions. `/chess` opens the pane.
+Your streak and place in the puzzle set are kept between sessions.
 
 Puzzles come from computer self-play, each checked with python-chess to have exactly one solution.
 
