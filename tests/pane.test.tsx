@@ -24,11 +24,11 @@ function cellOf(sq: string, flip: boolean) {
   return { x: LEFT + col * W + 3, y: row * H + 1 }
 }
 
-test('dragging the solution on the desktop board solves the puzzle', async ($, on) => {
+test('dragging the solution on the terminal board solves the puzzle', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
   const p = PUZZLES[0]!
   const flip = parseFen(p.fen).turn === 'b'
-  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const drag = async (uci: string) => {
     const a = cellOf(uci.slice(0, 2), flip), b = cellOf(uci.slice(2, 4), flip)
     await ui.pointer({ type: 'down', x: a.x, y: a.y, button: 'left' })
@@ -46,7 +46,7 @@ test('a wrong drag is refused and resets nothing else', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
   const p = PUZZLES[0]!
   const flip = parseFen(p.fen).turn === 'b'
-  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const from = p.a[0]!.slice(0, 2)
   const to = from === 'd4' ? 'e5' : 'd4'
   const a = cellOf(from, flip), b = cellOf(to, flip)
@@ -79,7 +79,7 @@ test('when Claude is done, the pane offers to go back or keep playing', async ($
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('ui.panes', () => ({ value: [] }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.notify', () => ({ value: { isSent: false, reason: 'none' } }))
+  on('ui.notify', () => ({ value: { isSent: false, reason: 'no-surface' } }))
   on('ui.toast', () => ({ value: undefined }))
   let closed = ''
   on('ui.close', (_, e) => { closed = e.id; return { value: undefined } })
@@ -97,15 +97,31 @@ test('one click that reaches both the drag layer and the button counts once', as
   on('clock.now', () => ({ value: 5000 }))
   const p = PUZZLES[0]!
   const flip = parseFen(p.fen).turn === 'b'
-  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   const from = p.a[0]!.slice(0, 2)
   const a = cellOf(from, flip)
-  await ui.pointer({ type: 'down', x: a.x, y: a.y, button: 'left' })
-  await ui.pointer({ type: 'up', x: a.x, y: a.y, button: 'left' })
-  await ui.press({ key: from })
-  expect((await ui.find({ type: 'Text', text: /Now pick|Drag a piece/ }))).toBeTruthy()
-  const to = p.a[0]!.slice(2, 4)
-  await ui.press({ key: to })
-  expect((await ui.find({ type: 'Text', text: /Checkmate|finish it/ }))).toBeTruthy()
+  const ui2 = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui2.pointer({ type: 'down', x: a.x, y: a.y, button: 'left' })
+  await ui2.pointer({ type: 'up', x: a.x, y: a.y, button: 'left' })
+  await ui2.press({ key: from })
+  expect((await ui2.find({ type: 'Text', text: /Drag a piece/ }))).toBeTruthy()
+  await ui2.press({ key: p.a[0]!.slice(2, 4) })
+  expect((await ui2.find({ type: 'Text', text: /Checkmate|finish it/ }))).toBeTruthy()
+  await ui2.unmount()
+})
+
+test('the desktop board is a picture, and a drag reported over it plays the move', async ($, on) => {
+  on('store.set', () => ({ value: undefined }))
+  const p = PUZZLES[0]!
+  const flip = parseFen(p.fen).turn === 'b'
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Svg' })).toBeTruthy()
+  const idx = (sq: string) => {
+    const f = FILES.indexOf(sq[0]!), r = Number(sq[1])
+    return (flip ? r - 1 : 8 - r) * 8 + (flip ? 7 - f : f)
+  }
+  const play = async (uci: string) => ui.post({ type: 'move', from: idx(uci.slice(0, 2)), to: idx(uci.slice(2, 4)) })
+  await play(p.a[0]!)
+  if (p.n === 2) await play(p.b![0]!)
+  expect((await ui.find({ type: 'Text', text: /Checkmate/ }))?.text).toContain('Checkmate')
   await ui.unmount()
 })

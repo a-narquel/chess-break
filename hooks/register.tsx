@@ -6,6 +6,7 @@ import type { BoardProps } from './board'
 import { applyMove, FILES, glyph, isWhite, matches, parseFen, san } from './chess'
 import type { Board, Puzzle } from './chess'
 import { PUZZLES } from './puzzles'
+import { boardSvg } from './svg'
 
 const PANE = 'chess-break'
 const TITLE = 'Chess break'
@@ -55,7 +56,7 @@ async function save($: EngineInterface) {
 }
 
 function open($: EngineInterface) {
-  return $.ui.open({ id: PANE, title: TITLE, columns: 90 })
+  return $.ui.open({ id: PANE, title: TITLE, columns: 240 })
 }
 
 async function move($: EngineInterface, from: string, to: string) {
@@ -256,19 +257,35 @@ export const register: Register = on => {
     )
 
     let boardTree = grid
-    if (canDrag) {
-      const { Client } = $.ui.resolve({ ...e, surface: e.surface as 'desktop' | 'terminal' })
-      const props: BoardProps = {
-        cellW,
-        cellH,
-        own: squares.map(sq => { const pc = board[sq]; return pc !== undefined && isWhite(pc) === (toMove === 'w') }),
-        locked: g.isSolved,
+    const own = squares.map(sq => { const pc = board[sq]; return pc !== undefined && isWhite(pc) === (toMove === 'w') })
+    const layer: BoardProps = { own, locked: g.isSolved }
+    if (e.surface === 'desktop') {
+      // A drawn board as large as the pane allows: a text column is about 8.4
+      // pixels wide and a row about 20 tall; leave rows for the text and buttons.
+      const rows = e.props.scroll?.bodyRows ?? 40
+      const px = Math.round(Math.max(280, Math.min(cols * 8.4 - 8, (rows - 11) * 20, 920)))
+      const marks: Record<string, string> = {}
+      for (const sq of squares) {
+        const m = markOf(sq)
+        if (m) marks[sq] = m
       }
+      const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
+      const source = boardSvg({ board, flip, marks, dragFrom: drag?.from, dragOver: drag?.over })
+      boardTree = (
+        <Box alignSelf="flex-start">
+          <Svg source={source} alt={`Chess board, ${side} to move, mate in ${p.n}`} width={px} height={px} />
+          <Box position="absolute" top={0} left={0} right={0} bottom={0}>
+            <Client key="board" module="./board.tsx" props={layer} width="100%" height="100%" />
+          </Box>
+        </Box>
+      )
+    } else if (e.surface === 'terminal') {
+      const { Client } = $.ui.resolve({ ...e, surface: 'terminal' })
       boardTree = (
         <Box>
           {grid}
           <Box position="absolute" top={0} left={2}>
-            <Client key="board" module="./board.tsx" props={props} width={8 * cellW} height={8 * cellH} />
+            <Client key="board" module="./board.tsx" props={{ ...layer, cellW, cellH }} width={8 * cellW} height={8 * cellH} />
           </Box>
         </Box>
       )
