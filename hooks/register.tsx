@@ -332,11 +332,15 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
           ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, bandPx, 1100)))
           : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
         const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
+        // The drag layer is sized in text cells, about 8.3 by 20 pixels in the app,
+        // to cover the picture; it reads the pointer as a share of its own size.
+        const layerCols = Math.max(8, Math.round(px / 8.3))
+        const layerRows = Math.max(8, Math.round(px / 20))
         boardTree = (
           <Box alignSelf="flex-start">
-            <Svg source={source} alt={alt} width={px} height={px} />
-            <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-              <Client key="board" module="./board.tsx" props={layer} width="100%" height="100%" />
+            <Svg source={source} alt={alt} width={px} />
+            <Box position="absolute" top={0} left={0} width={layerCols} height={layerRows}>
+              <Client key="board" module="./board.tsx" props={layer} width={layerCols} height={layerRows} />
             </Box>
           </Box>
         )
@@ -348,7 +352,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         // A phone fits the picture to its width; VS Code sizes it to the pane.
         boardTree = e.surface === 'mobile'
           ? (isBand ? <Svg source={source} alt={alt} width={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} height={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} /> : <Svg source={source} alt={alt} />)
-          : <Svg source={source} alt={alt} width={vsPx} height={vsPx} />
+          : <Svg source={source} alt={alt} width={vsPx} />
       }
       // Tap buttons: the way to move where a drag cannot reach the board, and a
       // second way everywhere else.
