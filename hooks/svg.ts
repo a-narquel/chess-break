@@ -20,10 +20,14 @@ export type SvgInput = {
   dots?: string[]
   dragFrom?: string
   dragOver?: string
+  // The piece picked up by a click: drawn raised off its square, with a shadow.
+  lift?: string
+  // The move just played, uci: the piece glides from its old square to its new one.
+  slide?: string
 }
 
 // The board as one SVG document, 800 units square, the side to move at the bottom.
-export function boardSvg({ board, flip, marks, dots: targetDots = [], dragFrom, dragOver }: SvgInput): string {
+export function boardSvg({ board, flip, marks, dots: targetDots = [], dragFrom, dragOver, lift, slide }: SvgInput): string {
   const out: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">`,
   ]
@@ -55,7 +59,9 @@ export function boardSvg({ board, flip, marks, dots: targetDots = [], dragFrom, 
     out.push(`<text x="5" y="${i * 100 + 19}" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="${rankColor}">${rank}</text>`)
   }
   const piece = (p: string, x: number, y: number, opacity = 1) => pieceSvg(p, x, y, opacity)
+  const slideTo = slide?.slice(2, 4)
   for (const [sq, p] of Object.entries(board)) {
+    if (sq === lift || sq === slideTo) continue
     const { x, y } = xy(sq)
     out.push(piece(p, x, y, sq === dragFrom && dragOver && dragOver !== dragFrom ? 0.3 : 1))
   }
@@ -67,6 +73,31 @@ export function boardSvg({ board, flip, marks, dots: targetDots = [], dragFrom, 
       : `<circle cx="${x + 50}" cy="${y + 50}" r="44" fill="none" stroke="rgba(0,0,0,.18)" stroke-width="10"/>`)
   }
   out.push(...dots)
+  // The move just played glides in over a quarter of a second, then rests.
+  if (slide && slideTo) {
+    const p = board[slideTo]
+    if (p) {
+      const a = xy(slide.slice(0, 2))
+      const b = xy(slideTo)
+      out.push(
+        `<g><animateTransform attributeName="transform" type="translate" from="${a.x - b.x} ${a.y - b.y}" to="0 0" ` +
+          `dur="0.28s" calcMode="spline" keySplines="0.2 0.8 0.3 1" keyTimes="0;1" fill="freeze"/>${piece(p, b.x, b.y)}</g>`,
+      )
+    }
+  }
+  // A piece picked up by a click floats above its square and bobs a little.
+  if (lift) {
+    const p = board[lift]
+    if (p) {
+      const { x, y } = xy(lift)
+      out.push(
+        `<ellipse cx="${x + 50}" cy="${y + 90}" rx="30" ry="8" fill="rgba(0,0,0,.4)"/>` +
+          `<g transform="translate(${x + 50} ${y + 50}) scale(1.12) translate(${-x - 50} ${-y - 58})">` +
+          `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -4;0 0" dur="1.4s" repeatCount="indefinite"/>` +
+          `${piece(p, x, y)}</g></g>`,
+      )
+    }
+  }
   if (dragFrom && dragOver && dragOver !== dragFrom) {
     const p = board[dragFrom]
     if (p) {

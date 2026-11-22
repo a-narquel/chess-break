@@ -10,6 +10,8 @@ export type Game = {
   line: string[]
   startedAt: number
   wrongSq: string | null
+  slide: string | null
+  movedAt: number
 }
 export type Stats = { solved: number; streak: number; best: number }
 export type Working = 'idle' | 'working' | 'done' | 'playing'

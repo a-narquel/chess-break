@@ -23,9 +23,11 @@ const fresh = (index: number): Game => ({
   line: [],
   startedAt: 0,
   wrongSq: null,
+  slide: null,
+  movedAt: 0,
 })
 
-const game = atom({ plugin: 'chess-break', key: 'game' } as const, fresh(0), { shape: 'game-3' })
+const game = atom({ plugin: 'chess-break', key: 'game' } as const, fresh(0), { shape: 'game-4' })
 const stats = atom({ plugin: 'chess-break', key: 'stats' } as const, { solved: 0, streak: 0, best: 0 }, { shape: 'stats-1' })
 const working = atom({ plugin: 'chess-break', key: 'working' } as const, 'idle' as Working)
 const paneOpen = atom({ plugin: 'chess-break', key: 'paneOpen' } as const, false)
@@ -76,7 +78,7 @@ function clockText(ms: number) {
 
 async function move($: EngineInterface, from: string, to: string) {
   const now = await nowMs($)
-  let outcome = 'none' as 'none' | 'wrong' | 'solved'
+  let outcome = 'none' as 'none' | 'wrong' | 'solved' | 'first'
   await update($, game, g => {
     if (g.isSolved) return g
     const { p, board } = position(g)
@@ -87,17 +89,29 @@ async function move($: EngineInterface, from: string, to: string) {
     }
     if (g.stage === 0 && p.n === 2 && p.r !== undefined) {
       const after = applyMove(board, m)
+      outcome = 'first'
       return {
-        ...g, stage: 1 as const, selected: null, wrongSq: null, line: [m, p.r], tone: 'good' as const,
-        message: `${san(board, m)}! They reply ${san(after, p.r)}. Now finish it.`,
+        ...g, stage: 1 as const, selected: null, wrongSq: null, line: [m], slide: m, movedAt: now, tone: 'good' as const,
+        message: `${san(board, m)}! Now watch their reply…`,
       }
     }
     outcome = 'solved'
     return {
-      ...g, stage: 2 as const, selected: null, wrongSq: null, isSolved: true, line: [...g.line, m], tone: 'good' as const,
+      ...g, stage: 2 as const, selected: null, wrongSq: null, isSolved: true, line: [...g.line, m], slide: m, movedAt: now, tone: 'good' as const,
       message: `${san(board, m)}# Checkmate!${g.startedAt > 0 && now > 0 ? ` Solved in ${clockText(now - g.startedAt)}.` : ''}`,
     }
   })
+  if (outcome === 'first') {
+    // Their reply comes after a beat, gliding in like yours did.
+    await $.clock.sleep(650).catch(() => undefined)
+    const at = await nowMs($)
+    await update($, game, x => {
+      const pz = puzzle(x.index)
+      if (x.stage !== 1 || x.line.length !== 1 || pz.r === undefined) return x
+      const before = position(x).board
+      return { ...x, line: [...x.line, pz.r], slide: pz.r, movedAt: at, message: `They reply ${san(before, pz.r)}. Now finish it.` }
+    })
+  }
   const g = await read($, game)
   if (outcome === 'solved') {
     await update($, stats, s => {
@@ -345,7 +359,10 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         const m = markOf(sq)
         if (m) marks[sq] = m
       }
-      const source = boardSvg({ board, flip, marks, dots: chosen, dragFrom: drag?.from, dragOver: drag?.over })
+      const renderedAt = await nowMs($)
+      const slide = g.slide && renderedAt - g.movedAt < 900 ? g.slide : undefined
+      const lift = drag ? undefined : (g.selected ?? undefined)
+      const source = boardSvg({ board, flip, marks, dots: chosen, dragFrom: drag?.from, dragOver: drag?.over, lift, slide })
       const alt = `Chess board, ${side} to move, mate in ${p.n}`
       if (e.surface === 'desktop') {
         // As large as the pane allows: a text column is about 8.4 pixels wide and
@@ -354,7 +371,20 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
           ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, bandPx, 1100)))
           : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
         const { Svg } = $.ui.resolve({ ...e, surface: 'desktop' })
-        boardTree = clickableBoard(<Svg source={source} alt={alt} width={px} />, px)
+        // The drag layer: where the app passes the pointer to mods (the desktop
+        // app), a drag or a click on the board plays; where it does not (the
+        // browser), the piece buttons under the board do.
+        const { Client } = $.ui.resolve({ ...e, surface: 'desktop' })
+        const layerCols = Math.max(8, Math.round(px / 8.3))
+        const layerRows = Math.max(8, Math.round(px / 20))
+        boardTree = (
+          <Box alignSelf="flex-start">
+            <Svg source={source} alt={alt} width={px} />
+            <Box position="absolute" top={0} left={0} width={layerCols} height={layerRows}>
+              <Client key="board" module="./board.tsx" props={layer} width={layerCols} height={layerRows} />
+            </Box>
+          </Box>
+        )
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
         const vsPx = isBand
@@ -372,7 +402,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         const pieces = squares.filter(sq => own[squares.indexOf(sq)] && movesFrom(sq).length > 0)
         picker = sel === null ? (
           <Box flexDirection="column">
-            <Text dimColor>{e.surface === 'mobile' ? 'Tap a piece to move:' : 'Or pick a piece here:'}</Text>
+            <Text dimColor>Pick a piece:</Text>
             <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
               {pieces.map(sq => (
                 <Button key={`p-${sq}`} label={`${glyph(board[sq])} ${sq}`} onPress={() => tap($, sq)} />
@@ -427,7 +457,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       ) : null
 
     const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
-    const prompt = g.message || (e.surface === 'mobile' ? 'Tap a piece below, then where it goes.' : 'Click a piece, then the square to move it to.')
+    const prompt = g.message || (e.surface === 'mobile' ? 'Tap a piece below, then where it goes.' : 'Drag a piece, or pick it below and then its square.')
 
     const title = (
       <Text bold>
