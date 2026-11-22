@@ -28,6 +28,7 @@ const fresh = (index: number): Game => ({
 const game = atom({ plugin: 'chess-break', key: 'game' } as const, fresh(0), { shape: 'game-3' })
 const stats = atom({ plugin: 'chess-break', key: 'stats' } as const, { solved: 0, streak: 0, best: 0 }, { shape: 'stats-1' })
 const working = atom({ plugin: 'chess-break', key: 'working' } as const, 'idle' as Working)
+const paneOpen = atom({ plugin: 'chess-break', key: 'paneOpen' } as const, false)
 const zoom = atom({ plugin: 'chess-break', key: 'zoom' } as const, 1)
 const dragging = atom({ plugin: 'chess-break', key: 'drag' } as const, null as Drag)
 
@@ -58,7 +59,8 @@ async function save($: EngineInterface) {
   await $.store.set('stats', await read($, stats))
 }
 
-function open($: EngineInterface) {
+async function open($: EngineInterface) {
+  await update($, paneOpen, () => true)
   return $.ui.open({ id: PANE, title: TITLE, columns: 240 })
 }
 
@@ -211,11 +213,19 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => drawGame($, e, 'pane'))
 
+  // However the pane closes (its own button, the close mark, Esc), the band takes the board back.
+  on('ui.close', async ($, e, next) => {
+    const done = await next(e)
+    if (e.id === PANE) await update($, paneOpen, () => false)
+    return done
+  })
+
   // The board's home: the band between the conversation and the prompt box,
   // as wide as the conversation, shown from a prompt until you go back.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const w = await read($, working)
     if (e.props.hasSurvey || w === 'idle') return next(e)
+    if (await read($, paneOpen)) return next(e)
     return drawGame($, e, 'band')
   })
 }
@@ -246,8 +256,9 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
     const cols = e.props.bodyColumns ?? 40
     const roomRows = 'maxRows' in e.props ? e.props.maxRows : (e.props.scroll?.bodyRows ?? 40)
     const isBand = place === 'band'
-    const sideBySide = isBand && cols >= 70
+    const sideBySide = isBand ? cols >= 70 : cols >= 110
     const rowsFree = Math.max(8, sideBySide ? roomRows - 1 : roomRows - (isBand ? 9 : 12))
+    const panePx = Math.round(Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, (rowsFree + 1) * 20))
     // In the band, rows are a hard limit: a row there is drawn about 16 to 20
     // pixels tall, so size by the smaller and keep two rows spare.
     const z = await read($, zoom)
@@ -319,7 +330,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         // a row about 20 tall; leave rows for the text and buttons.
         const px = isBand
           ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, bandPx, 1100)))
-          : Math.round(Math.max(220, Math.min(cols * 8.4 - 8, (rowsFree + 1) * 20, 960)))
+          : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
         const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
         boardTree = (
           <Box alignSelf="flex-start">
@@ -333,7 +344,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
         const vsPx = isBand
           ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 7.5 : cols * 7.5, bandPx, 1100)))
-          : Math.round(Math.max(220, Math.min(cols * 7.5, (rowsFree + 1) * 20, 900)))
+          : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
         // A phone fits the picture to its width; VS Code sizes it to the pane.
         boardTree = e.surface === 'mobile'
           ? (isBand ? <Svg source={source} alt={alt} width={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} height={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} /> : <Svg source={source} alt={alt} />)
@@ -379,7 +390,10 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
 
     const goBack = async () => {
       await update($, working, () => 'idle' as Working)
-      if (place === 'pane') await $.ui.close({ id: PANE })
+      if (place === 'pane') {
+        await update($, paneOpen, () => false)
+        await $.ui.close({ id: PANE })
+      }
     }
     const banner =
       w === 'done' ? (
@@ -432,10 +446,11 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
           {s.streak >= 2 ? <Text color="#f08c2e" bold>🔥 {s.streak} in a row  </Text> : null}
           <Text dimColor>Solved {s.solved} · best streak {s.best}</Text>
         </Text>
-        {isBand && e.surface !== 'terminal' ? (
+        {e.surface !== 'terminal' ? (
           <Box flexDirection="row" gap={1}>
             <Button key="zoom-out" label="− Smaller" onPress={() => setZoom(x => x - 0.1)} />
             <Button key="zoom-in" label="+ Bigger" onPress={() => setZoom(x => x + 0.1)} />
+            {isBand ? <Button key="full" label="⛶ Full size" variant="primary" onPress={() => open($)} /> : null}
           </Box>
         ) : null}
       </Box>

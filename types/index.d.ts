@@ -23,6 +23,7 @@ declare module 'claude-code' {
       working: Working
       drag: Drag
       zoom: number
+      paneOpen: boolean
     }
   }
 }
