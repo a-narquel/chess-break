@@ -173,6 +173,7 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     const ran = await next(e)
     await update($, working, () => 'working' as Working)
+    if (!(await $.ui.panes()).some(pane => pane.id === PANE)) void open($)
     const now = await nowMs($)
     await update($, game, x => (x.startedAt === 0 && !x.isSolved ? { ...x, startedAt: now } : x))
     return ran
@@ -220,14 +221,6 @@ export const register: Register = on => {
     return done
   })
 
-  // The board's home: the band between the conversation and the prompt box,
-  // as wide as the conversation, shown from a prompt until you go back.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const w = await read($, working)
-    if (e.props.hasSurvey || w === 'idle') return next(e)
-    if (await read($, paneOpen)) return next(e)
-    return drawGame($, e, 'band')
-  })
 }
 
 async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt'>, place: 'pane' | 'band') {

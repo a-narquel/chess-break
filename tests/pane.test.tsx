@@ -144,89 +144,24 @@ test('the desktop board is a picture, and a drag reported over it plays the move
   await ui.unmount()
 })
 
-const BAND = {
-  plugin: 'chess-break',
-  component: 'AbovePrompt',
-  requestId: 'band',
-  props: {
-    hasSurvey: false, isCollapsed: false, isWorking: true, maxRows: 26, bodyColumns: 140,
-    scroll: { offset: 0, bodyRows: 25 }, view: {},
-  },
-} as const
-
-test('the board sits above the prompt from a prompt until you go back', async ($, on) => {
+test('a prompt opens the board in the side pane', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
   on('prompt.submit', (_, e) => ({ text: e.text }))
-  on('turn.complete', (_, e) => ({ text: e.answer }))
-  on('ui.notify', () => ({ value: { isSent: false, reason: 'no-surface' } }))
-  on('ui.toast', () => ({ value: undefined }))
-  on('ui.render', ($, e) => { const { Text } = $.ui.resolve(e); return <Text>engine</Text> })
-
-  let ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await ui.find({ type: 'Svg' })).toBeFalsy()
-  await ui.unmount()
-
+  on('ui.panes', () => ({ value: [] }))
+  let opened = ''
+  on('ui.open', (_, e) => { opened = e.id; return { value: { isPlaced: true } } })
   await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
-  for (const surface of ['desktop', 'vscode', 'mobile', 'terminal'] as const) {
-    const each = await $.ui.mount({ ...BAND, surface })
-    expect((await each.find({ type: 'Text', text: /Mate in/ }))).toBeTruthy()
-    expect((await each.find({ type: 'Text', text: /Claude is working/ }))).toBeTruthy()
-    await each.unmount()
-  }
-
-  await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
-  ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Claude's done/ }))).toBeTruthy()
-  await ui.press({ key: 'stay' })
-  expect(await ui.find({ type: 'Svg' })).toBeTruthy()
-  await ui.press({ key: 'back' })
-  await ui.unmount()
-  ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await ui.find({ type: 'Svg' })).toBeFalsy()
-  await ui.unmount()
+  expect(opened).toBe('chess-break')
 })
 
-test('Bigger and Smaller resize the board in the band and are remembered', async ($, on) => {
+test('Bigger and Smaller resize the board and are remembered', async ($, on) => {
   const kept: Record<string, unknown> = {}
   on('store.set', (_, e) => { kept[e.key] = e.value; return { value: undefined } })
-  on('prompt.submit', (_, e) => ({ text: e.text }))
-  on('clock.now', () => ({ value: 1000 }))
-  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
-  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   const width = async () => ((await ui.find({ type: 'Svg' })) as { props?: { width?: number } } | undefined)?.props?.width ?? 0
   const before = await width()
   await ui.press({ key: 'zoom-out' })
-  const smaller = await width()
-  expect(smaller).toBeLessThan(before)
+  expect(await width()).toBeLessThan(before)
   expect(kept.zoom).toBe(0.9)
   await ui.unmount()
-})
-
-test('Full size moves the board into the pane, and closing the pane brings it back', async ($, on) => {
-  on('store.set', () => ({ value: undefined }))
-  on('turn.complete', (_, e) => ({ text: e.answer }))
-  on('ui.notify', () => ({ value: { isSent: false, reason: 'no-surface' } }))
-  on('ui.toast', () => ({ value: undefined }))
-  on('prompt.submit', (_, e) => ({ text: e.text }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.close', () => ({ value: undefined }))
-  on('ui.render', ($, e) => { const { Text } = $.ui.resolve(e); return <Text>engine</Text> })
-  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
-  let band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  await band.press({ key: 'full' })
-  await band.unmount()
-  band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await band.find({ type: 'Svg' })).toBeFalsy()
-  await band.unmount()
-  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 200, scroll: { offset: 0, bodyRows: 50 } }, surface: 'desktop' })
-  const svg = (await pane.find({ type: 'Svg' })) as { props?: { width?: number } } | undefined
-  expect(svg?.props?.width ?? 0).toBeGreaterThan(800)
-  await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
-  await pane.press({ key: 'stay' })
-  await pane.press({ key: 'back' })
-  await pane.unmount()
-  await $.prompt.submit({ text: 'again', wait: false, origin: { kind: 'composer' } })
-  band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await band.find({ type: 'Svg' })).toBeTruthy()
-  await band.unmount()
 })
