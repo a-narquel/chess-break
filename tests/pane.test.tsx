@@ -56,18 +56,36 @@ test('a wrong drag is refused and resets nothing else', async ($, on) => {
   await ui.unmount()
 })
 
-test('vscode and mobile show the drawn board and solve with tap buttons', async ($, on) => {
+test('desktop and vscode: click a piece on the board, then its square', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
   let t = 0
   on('clock.now', () => ({ value: (t += 1000) }))
   const p = PUZZLES[0]!
-  for (const surface of ['vscode', 'mobile'] as const) {
+  for (const surface of ['desktop', 'vscode'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ type: 'Svg' })).toBeTruthy()
-    expect(await ui.find({ type: 'Button', key: `p-${p.a[0]!.slice(0, 2)}` })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', key: 'e4' })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', key: `p-${p.a[0]!.slice(0, 2)}` })).toBeFalsy()
     await ui.unmount()
   }
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const play = async (uci: string) => {
+    await ui.press({ key: uci.slice(0, 2) })
+    await ui.press({ key: uci.slice(2, 4) })
+  }
+  await play(p.a[0]!)
+  if (p.n === 2) await play(p.b![0]!)
+  expect((await ui.find({ type: 'Text', text: /Checkmate/ }))?.text).toContain('Checkmate')
+  await ui.unmount()
+})
+
+test('mobile: tap buttons under the board', async ($, on) => {
+  on('store.set', () => ({ value: undefined }))
+  let t = 0
+  on('clock.now', () => ({ value: (t += 1000) }))
+  const p = PUZZLES[0]!
   const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+  expect(await ui.find({ type: 'Svg' })).toBeTruthy()
   const play = async (uci: string) => {
     await ui.press({ key: `p-${uci.slice(0, 2)}` })
     await ui.press({ key: `t-${uci.slice(2, 4)}` })
@@ -121,27 +139,10 @@ test('one click that reaches both the drag layer and the button counts once', as
   await ui2.pointer({ type: 'down', x: a.x, y: a.y, button: 'left' })
   await ui2.pointer({ type: 'up', x: a.x, y: a.y, button: 'left' })
   await ui2.press({ key: from })
-  expect((await ui2.find({ type: 'Text', text: /Drag a piece/ }))).toBeTruthy()
+  expect((await ui2.find({ type: 'Text', text: /Click a piece/ }))).toBeTruthy()
   await ui2.press({ key: p.a[0]!.slice(2, 4) })
   expect((await ui2.find({ type: 'Text', text: /Checkmate|finish it/ }))).toBeTruthy()
   await ui2.unmount()
-})
-
-test('the desktop board is a picture, and a drag reported over it plays the move', async ($, on) => {
-  on('store.set', () => ({ value: undefined }))
-  const p = PUZZLES[0]!
-  const flip = parseFen(p.fen).turn === 'b'
-  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ type: 'Svg' })).toBeTruthy()
-  const idx = (sq: string) => {
-    const f = FILES.indexOf(sq[0]!), r = Number(sq[1])
-    return (flip ? r - 1 : 8 - r) * 8 + (flip ? 7 - f : f)
-  }
-  const play = async (uci: string) => ui.post({ type: 'move', from: idx(uci.slice(0, 2)), to: idx(uci.slice(2, 4)) })
-  await play(p.a[0]!)
-  if (p.n === 2) await play(p.b![0]!)
-  expect((await ui.find({ type: 'Text', text: /Checkmate/ }))?.text).toContain('Checkmate')
-  await ui.unmount()
 })
 
 test('a prompt opens the board in the side pane', async ($, on) => {

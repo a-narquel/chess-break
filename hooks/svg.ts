@@ -1,4 +1,5 @@
-import { FILES, isWhite } from './chess'
+import { FILES } from './chess'
+import { pieceSvg } from './pieces'
 import type { Board } from './chess'
 
 const LIGHT = '#ebecd0'
@@ -11,8 +12,6 @@ const MARK: Record<string, string> = {
   mate: 'rgba(224, 60, 50, .75)',
   bad: 'rgba(224, 80, 60, .55)',
 }
-const GLYPH: Record<string, string> = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
-const FONT = "'DejaVu Sans', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', 'Arial Unicode MS', serif"
 
 export type SvgInput = {
   board: Board
@@ -55,15 +54,7 @@ export function boardSvg({ board, flip, marks, dots: targetDots = [], dragFrom, 
     out.push(`<text x="${i * 100 + 93}" y="794" font-family="Arial, sans-serif" font-size="17" font-weight="700" text-anchor="end" fill="${fileColor}">${file}</text>`)
     out.push(`<text x="5" y="${i * 100 + 19}" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="${rankColor}">${rank}</text>`)
   }
-  const piece = (p: string, x: number, y: number, opacity = 1) => {
-    const white = isWhite(p)
-    const g = GLYPH[p.toLowerCase()] ?? '?'
-    return (
-      `<text x="${x + 50}" y="${y + 52}" font-family="${FONT}" font-size="80" text-anchor="middle" dominant-baseline="central" ` +
-      `fill="${white ? '#ffffff' : '#1d1d1d'}" stroke="${white ? '#1d1d1d' : '#000000'}" stroke-width="${white ? 3 : 1.5}" ` +
-      `stroke-linejoin="round" paint-order="stroke" opacity="${opacity}">${g}&#xFE0E;</text>`
-    )
-  }
+  const piece = (p: string, x: number, y: number, opacity = 1) => pieceSvg(p, x, y, opacity)
   for (const [sq, p] of Object.entries(board)) {
     const { x, y } = xy(sq)
     out.push(piece(p, x, y, sq === dragFrom && dragOver && dragOver !== dragFrom ? 0.3 : 1))

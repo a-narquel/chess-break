@@ -310,6 +310,35 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
     }
     const chosen = g.isSolved ? [] : g.selected ? movesFrom(g.selected) : drag ? movesFrom(drag.from) : []
     let picker = null
+    // The board picture with a see-through button over each square, laid out in
+    // shares of the picture so it lines up at any size: a click on a square is
+    // a press of its button. A square's blank label is sized to fill the square.
+    const clickableBoard = (picture: ReturnType<typeof Box>, sizePx: number) => {
+      const blankCols = Math.max(2, Math.floor(sizePx / 8 / 8.3) - 1)
+      const blankRows = Math.max(1, Math.floor(sizePx / 8 / 20))
+      const blank = Array.from({ length: blankRows }, () => '\u00a0'.repeat(blankCols)).join('\n')
+      return (
+        <Box alignSelf="flex-start">
+          {picture}
+          <Box position="absolute" top={0} left={0} right={0} bottom={0} flexDirection="column">
+            {Array.from({ length: 8 }, (_, row) => (
+              <Box key={`row${row}`} flexDirection="row" flexGrow={1}>
+                {Array.from({ length: 8 }, (_, c) => {
+                  const sq = squares[row * 8 + c] ?? ''
+                  return (
+                    <Box key={`cell-${sq}`} flexGrow={1} justifyContent="center" alignItems="center">
+                      <Button key={sq} plain onPress={() => tap($, sq)}>
+                        <Text>{blank}</Text>
+                      </Button>
+                    </Box>
+                  )
+                })}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )
+    }
     if (e.surface !== 'terminal') {
       const marks: Record<string, string> = {}
       for (const sq of squares) {
@@ -324,19 +353,8 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         const px = isBand
           ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, bandPx, 1100)))
           : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
-        const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
-        // The drag layer is sized in text cells, about 8.3 by 20 pixels in the app,
-        // to cover the picture; it reads the pointer as a share of its own size.
-        const layerCols = Math.max(8, Math.round(px / 8.3))
-        const layerRows = Math.max(8, Math.round(px / 20))
-        boardTree = (
-          <Box alignSelf="flex-start">
-            <Svg source={source} alt={alt} width={px} />
-            <Box position="absolute" top={0} left={0} width={layerCols} height={layerRows}>
-              <Client key="board" module="./board.tsx" props={layer} width={layerCols} height={layerRows} />
-            </Box>
-          </Box>
-        )
+        const { Svg } = $.ui.resolve({ ...e, surface: 'desktop' })
+        boardTree = clickableBoard(<Svg source={source} alt={alt} width={px} />, px)
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
         const vsPx = isBand
@@ -345,16 +363,16 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         // A phone fits the picture to its width; VS Code sizes it to the pane.
         boardTree = e.surface === 'mobile'
           ? (isBand ? <Svg source={source} alt={alt} width={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} height={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} /> : <Svg source={source} alt={alt} />)
-          : <Svg source={source} alt={alt} width={vsPx} />
+          : clickableBoard(<Svg source={source} alt={alt} width={vsPx} />, vsPx)
       }
       // Tap buttons: the way to move where a drag cannot reach the board, and a
       // second way everywhere else.
-      if (!g.isSolved && !(isBand && e.surface === 'desktop')) {
+      if (!g.isSolved && e.surface === 'mobile') {
         const sel = g.selected
         const pieces = squares.filter(sq => own[squares.indexOf(sq)] && movesFrom(sq).length > 0)
         picker = sel === null ? (
           <Box flexDirection="column">
-            <Text dimColor>{e.surface === 'desktop' ? 'Or tap a piece:' : 'Tap a piece to move:'}</Text>
+            <Text dimColor>Tap a piece to move:</Text>
             <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
               {pieces.map(sq => (
                 <Button key={`p-${sq}`} label={`${glyph(board[sq])} ${sq}`} onPress={() => tap($, sq)} />
@@ -409,7 +427,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       ) : null
 
     const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
-    const prompt = g.message || (canDrag ? 'Drag a piece to its square, or click it and then the square.' : 'Tap a piece below, then where it goes.')
+    const prompt = g.message || (e.surface === 'mobile' ? 'Tap a piece below, then where it goes.' : 'Click a piece, then the square to move it to.')
 
     const title = (
       <Text bold>
