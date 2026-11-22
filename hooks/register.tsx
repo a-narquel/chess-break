@@ -367,12 +367,12 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       }
       // Tap buttons: the way to move where a drag cannot reach the board, and a
       // second way everywhere else.
-      if (!g.isSolved && e.surface === 'mobile') {
+      if (!g.isSolved) {
         const sel = g.selected
         const pieces = squares.filter(sq => own[squares.indexOf(sq)] && movesFrom(sq).length > 0)
         picker = sel === null ? (
           <Box flexDirection="column">
-            <Text dimColor>Tap a piece to move:</Text>
+            <Text dimColor>{e.surface === 'mobile' ? 'Tap a piece to move:' : 'Or pick a piece here:'}</Text>
             <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
               {pieces.map(sq => (
                 <Button key={`p-${sq}`} label={`${glyph(board[sq])} ${sq}`} onPress={() => tap($, sq)} />

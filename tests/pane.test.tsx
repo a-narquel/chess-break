@@ -65,7 +65,7 @@ test('desktop and vscode: click a piece on the board, then its square', async ($
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ type: 'Svg' })).toBeTruthy()
     expect(await ui.find({ type: 'Button', key: 'e4' })).toBeTruthy()
-    expect(await ui.find({ type: 'Button', key: `p-${p.a[0]!.slice(0, 2)}` })).toBeFalsy()
+    expect(await ui.find({ type: 'Button', key: `p-${p.a[0]!.slice(0, 2)}` })).toBeTruthy()
     await ui.unmount()
   }
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
