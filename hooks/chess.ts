@@ -67,3 +67,66 @@ export function matches(accepted: string[], from: string, to: string): string | 
 const GLYPH: Record<string, string> = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
 export const glyph = (piece: string | undefined) =>
   piece === undefined ? '' : `${GLYPH[piece.toLowerCase()] ?? '?'}︎`
+
+// Squares a piece could move to, by how it moves, without checking for check:
+// enough to offer as choices; the puzzle's answer decides what is right.
+export function targets(board: Board, from: string, fen: string): string[] {
+  const piece = board[from]
+  if (piece === undefined) return []
+  const white = isWhite(piece)
+  const f0 = file(from)
+  const r0 = Number(from[1])
+  const out: string[] = []
+  const at = (f: number, r: number) => (f >= 0 && f < 8 && r >= 1 && r <= 8 ? `${FILES[f]}${r}` : null)
+  const isEnemy = (sq: string) => { const p = board[sq]; return p !== undefined && isWhite(p) !== white }
+  const isEmpty = (sq: string) => board[sq] === undefined
+  const ride = (dirs: number[][], far: boolean) => {
+    for (const [df = 0, dr = 0] of dirs) {
+      for (let k = 1; k < 8; k++) {
+        const sq = at(f0 + df * k, r0 + dr * k)
+        if (sq === null) break
+        if (isEmpty(sq)) out.push(sq)
+        else { if (isEnemy(sq)) out.push(sq); break }
+        if (!far) break
+      }
+    }
+  }
+  const straight = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+  const diagonal = [[1, 1], [1, -1], [-1, 1], [-1, -1]]
+  switch (piece.toLowerCase()) {
+    case 'r': ride(straight, true); break
+    case 'b': ride(diagonal, true); break
+    case 'q': ride([...straight, ...diagonal], true); break
+    case 'k': ride([...straight, ...diagonal], false); {
+      const rights = fen.split(' ')[2] ?? ''
+      const home = white ? 1 : 8
+      if (from === `e${home}`) {
+        if (rights.includes(white ? 'K' : 'k') && isEmpty(`f${home}`) && isEmpty(`g${home}`)) out.push(`g${home}`)
+        if (rights.includes(white ? 'Q' : 'q') && isEmpty(`d${home}`) && isEmpty(`c${home}`) && isEmpty(`b${home}`)) out.push(`c${home}`)
+      }
+      break
+    }
+    case 'n':
+      for (const [df, dr] of [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]]) {
+        const sq = at(f0 + (df ?? 0), r0 + (dr ?? 0))
+        if (sq !== null && (isEmpty(sq) || isEnemy(sq))) out.push(sq)
+      }
+      break
+    case 'p': {
+      const dir = white ? 1 : -1
+      const one = at(f0, r0 + dir)
+      if (one !== null && isEmpty(one)) {
+        out.push(one)
+        const two = at(f0, r0 + 2 * dir)
+        if ((white ? r0 === 2 : r0 === 7) && two !== null && isEmpty(two)) out.push(two)
+      }
+      const ep = fen.split(' ')[3]
+      for (const df of [-1, 1]) {
+        const sq = at(f0 + df, r0 + dir)
+        if (sq !== null && (isEnemy(sq) || sq === ep)) out.push(sq)
+      }
+      break
+    }
+  }
+  return out
+}

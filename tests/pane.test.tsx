@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { FILES, parseFen } from '../hooks/chess'
+import { applyMove, FILES, parseFen, targets } from '../hooks/chess'
 import { PUZZLES } from '../hooks/puzzles'
 
 const PANE = {
@@ -56,21 +56,39 @@ test('a wrong drag is refused and resets nothing else', async ($, on) => {
   await ui.unmount()
 })
 
-test('vscode and mobile get a board of clickable squares', async ($, on) => {
+test('vscode and mobile show the drawn board and solve with tap buttons', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
   let t = 0
   on('clock.now', () => ({ value: (t += 1000) }))
   const p = PUZZLES[0]!
   for (const surface of ['vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Button', key: 'e4' })).toBeTruthy()
+    expect(await ui.find({ type: 'Svg' })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', key: `p-${p.a[0]!.slice(0, 2)}` })).toBeTruthy()
     await ui.unmount()
   }
-  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  await ui.press({ key: p.a[0]!.slice(0, 2) })
-  await ui.press({ key: p.a[0]!.slice(2, 4) })
-  expect((await ui.find({ type: 'Text', text: /Checkmate|finish it/ }))).toBeTruthy()
+  const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+  const play = async (uci: string) => {
+    await ui.press({ key: `p-${uci.slice(0, 2)}` })
+    await ui.press({ key: `t-${uci.slice(2, 4)}` })
+  }
+  await play(p.a[0]!)
+  if (p.n === 2) await play(p.b![0]!)
+  expect((await ui.find({ type: 'Text', text: /Checkmate/ }))?.text).toContain('Checkmate')
   await ui.unmount()
+})
+
+test('every puzzle offers its answer among the tap targets', async () => {
+  for (const p of PUZZLES) {
+    const b0 = parseFen(p.fen).board
+    const first = p.a[0]!
+    expect(targets(b0, first.slice(0, 2), p.fen)).toContain(first.slice(2, 4))
+    if (p.n === 2) {
+      const b2 = applyMove(applyMove(b0, first), p.r!)
+      const last = p.b![0]!
+      expect(targets(b2, last.slice(0, 2), p.fen)).toContain(last.slice(2, 4))
+    }
+  }
 })
 
 test('when Claude is done, the pane offers to go back or keep playing', async ($, on) => {

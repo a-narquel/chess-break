@@ -16,12 +16,13 @@ export type SvgInput = {
   board: Board
   flip: boolean
   marks: Record<string, string>
+  dots?: string[]
   dragFrom?: string
   dragOver?: string
 }
 
 // The board as one SVG document, 800 units square, the side to move at the bottom.
-export function boardSvg({ board, flip, marks, dragFrom, dragOver }: SvgInput): string {
+export function boardSvg({ board, flip, marks, dots: targetDots = [], dragFrom, dragOver }: SvgInput): string {
   const out: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">`,
   ]
@@ -42,6 +43,7 @@ export function boardSvg({ board, flip, marks, dragFrom, dragOver }: SvgInput): 
     const { x, y } = xy(sq)
     out.push(`<rect x="${x}" y="${y}" width="100" height="100" fill="${fill}"/>`)
   }
+  const dots: string[] = []
   // Coordinates in the corners of the edge squares, as on a printed board.
   for (let i = 0; i < 8; i++) {
     const file = flip ? FILES[7 - i] : FILES[i]
@@ -64,6 +66,14 @@ export function boardSvg({ board, flip, marks, dragFrom, dragOver }: SvgInput): 
     const { x, y } = xy(sq)
     out.push(piece(p, x, y, sq === dragFrom && dragOver && dragOver !== dragFrom ? 0.3 : 1))
   }
+  // Where the selected piece can go: a dot on an empty square, a ring round a capture.
+  for (const sq of targetDots) {
+    const { x, y } = xy(sq)
+    dots.push(board[sq] === undefined
+      ? `<circle cx="${x + 50}" cy="${y + 50}" r="15" fill="rgba(0,0,0,.18)"/>`
+      : `<circle cx="${x + 50}" cy="${y + 50}" r="44" fill="none" stroke="rgba(0,0,0,.18)" stroke-width="10"/>`)
+  }
+  out.push(...dots)
   if (dragFrom && dragOver && dragOver !== dragFrom) {
     const p = board[dragFrom]
     if (p) {

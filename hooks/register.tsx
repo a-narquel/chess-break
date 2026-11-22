@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Drag, Game, Stats, Working } from '../types'
 import type { BoardProps } from './board'
-import { applyMove, FILES, glyph, isWhite, matches, parseFen, san } from './chess'
+import { applyMove, FILES, glyph, isWhite, matches, parseFen, san, targets } from './chess'
 import type { Board, Puzzle } from './chess'
 import { PUZZLES } from './puzzles'
 import { boardSvg } from './svg'
@@ -259,27 +259,70 @@ export const register: Register = on => {
     let boardTree = grid
     const own = squares.map(sq => { const pc = board[sq]; return pc !== undefined && isWhite(pc) === (toMove === 'w') })
     const layer: BoardProps = { own, locked: g.isSolved }
-    if (e.surface === 'desktop') {
-      // A drawn board as large as the pane allows: a text column is about 8.4
-      // pixels wide and a row about 20 tall; leave rows for the text and buttons.
-      const rows = e.props.scroll?.bodyRows ?? 40
-      const px = Math.round(Math.max(280, Math.min(cols * 8.4 - 8, (rows - 11) * 20, 920)))
+    // Where a piece may go: how it moves, plus the puzzle's own answer from that
+    // square, so the answer is always on offer.
+    const movesFrom = (sq: string) => {
+      const answer = expected(p, g).filter(m => m.slice(0, 2) === sq).map(m => m.slice(2, 4))
+      return [...new Set([...targets(board, sq, p.fen), ...answer])]
+    }
+    const chosen = g.isSolved ? [] : g.selected ? movesFrom(g.selected) : drag ? movesFrom(drag.from) : []
+    let picker = null
+    if (e.surface !== 'terminal') {
       const marks: Record<string, string> = {}
       for (const sq of squares) {
         const m = markOf(sq)
         if (m) marks[sq] = m
       }
-      const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
-      const source = boardSvg({ board, flip, marks, dragFrom: drag?.from, dragOver: drag?.over })
-      boardTree = (
-        <Box alignSelf="flex-start">
-          <Svg source={source} alt={`Chess board, ${side} to move, mate in ${p.n}`} width={px} height={px} />
-          <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-            <Client key="board" module="./board.tsx" props={layer} width="100%" height="100%" />
+      const source = boardSvg({ board, flip, marks, dots: chosen, dragFrom: drag?.from, dragOver: drag?.over })
+      const alt = `Chess board, ${side} to move, mate in ${p.n}`
+      if (e.surface === 'desktop') {
+        // As large as the pane allows: a text column is about 8.4 pixels wide and
+        // a row about 20 tall; leave rows for the text and buttons.
+        const rows = e.props.scroll?.bodyRows ?? 40
+        const px = Math.round(Math.max(280, Math.min(cols * 8.4 - 8, (rows - 11) * 20, 960)))
+        const { Svg, Client } = $.ui.resolve({ ...e, surface: 'desktop' })
+        boardTree = (
+          <Box alignSelf="flex-start">
+            <Svg source={source} alt={alt} width={px} height={px} />
+            <Box position="absolute" top={0} left={0} right={0} bottom={0}>
+              <Client key="board" module="./board.tsx" props={layer} width="100%" height="100%" />
+            </Box>
           </Box>
-        </Box>
-      )
-    } else if (e.surface === 'terminal') {
+        )
+      } else {
+        const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
+        // A phone fits the picture to its width; VS Code sizes it to the pane.
+        boardTree = e.surface === 'mobile'
+          ? <Svg source={source} alt={alt} />
+          : <Svg source={source} alt={alt} width={Math.round(Math.max(240, Math.min(cols * 7.5, 900)))} height={Math.round(Math.max(240, Math.min(cols * 7.5, 900)))} />
+      }
+      // Tap buttons: the way to move where a drag cannot reach the board, and a
+      // second way everywhere else.
+      if (!g.isSolved) {
+        const sel = g.selected
+        const pieces = squares.filter(sq => own[squares.indexOf(sq)] && movesFrom(sq).length > 0)
+        picker = sel === null ? (
+          <Box flexDirection="column">
+            <Text dimColor>{e.surface === 'desktop' ? 'Or tap a piece:' : 'Tap a piece to move:'}</Text>
+            <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+              {pieces.map(sq => (
+                <Button key={`p-${sq}`} label={`${glyph(board[sq])} ${sq}`} onPress={() => tap($, sq)} />
+              ))}
+            </Box>
+          </Box>
+        ) : (
+          <Box flexDirection="column">
+            <Text dimColor>Move {glyph(board[sel])} {sel} to:</Text>
+            <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+              {movesFrom(sel).map(t => (
+                <Button key={`t-${t}`} label={board[t] ? `×${t}` : t} onPress={() => { lastTap = { sq: '', at: 0 }; return move($, sel, t) }} />
+              ))}
+              <Button key="cancel" label="Cancel" onPress={() => update($, game, x => ({ ...x, selected: null }))} />
+            </Box>
+          </Box>
+        )
+      }
+    } else {
       const { Client } = $.ui.resolve({ ...e, surface: 'terminal' })
       boardTree = (
         <Box>
@@ -308,7 +351,7 @@ export const register: Register = on => {
       ) : null
 
     const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
-    const prompt = g.message || (canDrag ? 'Drag a piece, or click it and then its square.' : 'Click a piece, then its square.')
+    const prompt = g.message || (canDrag ? 'Drag a piece to its square, or click it and then the square.' : 'Tap a piece below, then where it goes.')
 
     return (
       <Box flexDirection="column" gap={1}>
@@ -318,6 +361,7 @@ export const register: Register = on => {
         </Text>
         {boardTree}
         <Text color={toneColor}>{prompt}</Text>
+        {picker}
         <Box flexDirection="row" gap={1}>
           {g.isSolved ? (
             <Button key="next" label="Next puzzle" variant="primary" hotkey="n" onPress={() => nextPuzzle($)} />
