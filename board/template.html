@@ -80,6 +80,10 @@ button {
   border: 1px solid var(--line); background: var(--panel); color: var(--ink);
   box-shadow: 0 2px 0 var(--line);
 }
+a.btn { font: 600 .9rem var(--font); border-radius: 6px; padding: 8px 14px; text-decoration: none; display: inline-block; }
+a.btn.primary { background: var(--accent); color: var(--accent-ink); border: 1px solid #5f8f35; box-shadow: 0 3px 0 #5f8f35; }
+.back { color: var(--accent); font-weight: 700; font-size: .85rem; text-decoration: none; }
+.back:hover { text-decoration: underline; }
 button:active { transform: translateY(1px); box-shadow: none; }
 button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: #5f8f35; box-shadow: 0 3px 0 #5f8f35; }
@@ -116,6 +120,7 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
   </div>
   <div class="claude">
     <span class="pill" id="claudeState" hidden></span>
+    <a class="back" id="backLink" href="https://claude.ai/code" target="_blank" rel="noopener" hidden>↩ Back to Claude</a>
     <label class="toggle"><input type="checkbox" id="autoBack"> Stop me when Claude replies</label>
   </div>
   <div class="credit">Pieces: Cburnett (Colin M.L. Burnett), GPL-2.0-or-later · Solved <span id="solved">0</span> · best streak <span id="best">0</span></div>
@@ -124,8 +129,8 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 <div class="overlay" id="overlay" hidden>
   <div>
     <h2>Claude replied</h2>
-    <p>Your answer is ready. Head back to the chat; a fresh puzzle waits for next time.</p>
-    <div class="row"><button class="primary" id="gotIt">Back to Claude</button><button id="keep">Finish this puzzle</button></div>
+    <p>Your answer is ready. A fresh puzzle waits for next time.</p>
+    <div class="row"><a class="btn primary" id="gotIt" href="https://claude.ai/code" target="_blank" rel="noopener">Back to Claude</a><button id="keep">Finish this puzzle</button></div>
   </div>
 </div>
 
@@ -379,7 +384,8 @@ function claudeReplied(title) {
   if (autoBack) { $("overlay").hidden = false; $("gotIt").focus(); }
   else toast("✔ Claude replied" + (title ? ": " + title.slice(0, 40) : ""));
 }
-$("gotIt").onclick = () => { $("overlay").hidden = true; idx++; store.set("advance", false); load(); };
+// The link opens the conversation; the board moves on to a fresh puzzle meanwhile.
+$("gotIt").addEventListener("click", () => { $("overlay").hidden = true; idx++; store.set("advance", false); load(); });
 $("keep").onclick = () => { $("overlay").hidden = true; };
 
 // Claude notes "working" when a message arrives and "done" when its reply
@@ -400,6 +406,8 @@ let lastState = null;
     const top = snap.docs && snap.docs[0];
     const s = top ? top.data() : null;
     const state = s && (s.state === "working" || s.state === "done") ? s.state : null;
+    const chat = s && typeof s.chat === "string" && /^https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+$/.test(s.chat) ? s.chat : null;
+    if (chat) { $("gotIt").href = chat; $("backLink").href = chat; $("backLink").hidden = false; }
     if (state === "working") showState("⏳ Claude is working", "work");
     else if (state === "done") showState("✔ Claude replied", "done");
     else showState("");

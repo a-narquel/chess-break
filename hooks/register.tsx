@@ -13,9 +13,10 @@ const BOARD = 'https://claude.ai/artifact/EgTojojUx9aEE2skBVyh5X'
 // Read by the model with each message the person sends: open the board at
 // once, and note "working" and then "done" on the board's notepad, so the
 // board can say when the reply is ready. `at` orders the notes.
-function boardNote(at: number): string {
+function boardNote(at: number, chat: string): string {
+  const link = chat ? `,"chat":"${chat}"` : ''
   const note = (state: string, n: number) =>
-    `ArtifactData action "set", url ${BOARD}, collection "status", doc_id "t${n}-${state}", data {"state":"${state}","at":${n}}`
+    `ArtifactData action "set", url ${BOARD}, collection "status", doc_id "t${n}-${state}", data {"state":"${state}","at":${n}${link}}`
   return (
     'The chess-break mod is on. First, before anything else this turn: if you have the Artifact tool, ' +
     `call it with action "open" and url ${BOARD}; then, if you have the ArtifactData tool, call ${note('working', at)}. ` +
@@ -205,7 +206,10 @@ export const register: Register = on => {
     // A slash command is no message to Claude: leave it as it is.
     if (e.command) return next(e)
     const at = await nowMs($)
-    const ran = await next({ ...e, context: [...(e.context ?? []), boardNote(at > 0 ? at : 1)] })
+    // This conversation's address on claude.ai, so the board can link back to it.
+    const remote = (await $.env.get('CLAUDE_CODE_REMOTE_SESSION_ID').catch(() => undefined)) ?? ''
+    const chat = /^cse_[A-Za-z0-9]+$/.test(remote) ? `https://claude.ai/code/session_${remote.slice(4)}` : ''
+    const ran = await next({ ...e, context: [...(e.context ?? []), boardNote(at > 0 ? at : 1, chat)] })
     await update($, working, () => 'working' as Working)
     const now = await nowMs($)
     await update($, game, x => (x.startedAt === 0 && !x.isSolved ? { ...x, startedAt: now } : x))
