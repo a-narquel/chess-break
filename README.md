@@ -5,7 +5,9 @@ A Claude Code mod that keeps you thinking between prompts instead of reaching fo
 When you send a message, the mod asks Claude to open the **chess board page** first thing, so it
 appears beside the conversation while Claude works: one of 682 mate-in-1 or mate-in-2 puzzles with
 real drag and drop, move sounds and animations. A **Play a puzzle** link above the prompt box
-opens it too. When Claude replies, a notification tells you it's done.
+opens it too. Claude also notes "working" and "done" on the board's notepad (its artifact database),
+so the board shows when Claude is working and pops up **Claude replied** the moment the reply is
+ready; tick **Stop me when Claude replies** for a full-screen stop instead.
 
 The board page is `board/index.html`, published as a claude.ai artifact. `/chess` also opens a
 simpler board in a side pane inside Claude Code.

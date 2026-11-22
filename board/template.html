@@ -117,7 +117,6 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
   <div class="claude">
     <span class="pill" id="claudeState" hidden></span>
     <label class="toggle"><input type="checkbox" id="autoBack"> Stop me when Claude replies</label>
-    <button id="alerts" hidden>Turn on Claude alerts</button>
   </div>
   <div class="credit">Pieces: Cburnett (Colin M.L. Burnett), GPL-2.0-or-later · Solved <span id="solved">0</span> · best streak <span id="best">0</span></div>
 </main>
@@ -383,45 +382,29 @@ function claudeReplied(title) {
 $("gotIt").onclick = () => { $("overlay").hidden = true; idx++; store.set("advance", false); load(); };
 $("keep").onclick = () => { $("overlay").hidden = true; };
 
-const WORKING = "SESSION_STATUS_BUCKET_WORKING";
-let mcp = null, polling = 0, wasWorking = new Map(), seenOnce = false;
-function sessionsOf(payload) {
-  const root = payload && (payload.ccr || payload);
-  return Array.isArray(root?.data) ? root.data : [];
-}
+// Claude notes "working" when a message arrives and "done" when its reply
+// is finished; the board hears each note as it lands.
 function showState(text, kind) {
   const el = $("claudeState"); el.hidden = !text; el.textContent = text || ""; el.className = "pill" + (kind ? " " + kind : "");
 }
-async function poll() {
-  if (!mcp || document.hidden) return;
-  try {
-    const res = await mcp.callTool("Claude Code Remote", "list_sessions", { mine: true, limit: 8 }, { cache: false });
-    const list = sessionsOf(res.payload);
-    let anyWorking = false;
-    for (const s of list) {
-      const working = s.status_bucket === WORKING;
-      if (working) anyWorking = true;
-      if (seenOnce && wasWorking.get(s.id) && !working) claudeReplied(s.title);
-      wasWorking.set(s.id, working);
-    }
-    seenOnce = true;
-    showState(anyWorking ? "⏳ Claude is working" : "✔ Claude is idle", anyWorking ? "work" : "done");
-    $("alerts").hidden = true;
-  } catch (err) {
-    const code = err && err.code;
-    if (code === "approval_required" || code === "not_in_manifest") { stopPolling(); $("alerts").hidden = false; showState(""); }
-    else if (code === "server_not_connected" || code === "needs_reauth" || code === "not_granted" || code === "capability_disabled" || code === "blocked_by_policy") {
-      stopPolling(); showState("Claude alerts are unavailable here");
-    } // anything else is transient: the next poll tries again
-  }
-}
-function startPolling() { if (!polling) { polling = setInterval(poll, 5000); poll(); } }
-function stopPolling() { clearInterval(polling); polling = 0; }
-$("alerts").onclick = () => { $("alerts").hidden = true; startPolling(); };
-document.addEventListener("visibilitychange", () => { if (!document.hidden && mcp && polling) poll(); });
+let lastState = null;
 (async () => {
-  try { mcp = window.claude && window.claude.use ? await window.claude.use("mcp") : null; } catch { mcp = null; }
-  if (!mcp) return; // no connector here: the board works on its own
-  startPolling();
+  let db = null;
+  try { db = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch { db = null; }
+  if (!db) return; // no notepad here: the board works on its own
+  const slow = setTimeout(() => showState("Waiting for Claude's status…"), 10000);
+  // Each message adds a "working" note and, when the reply is done, a "done"
+  // note, numbered by time: the newest note is Claude's state now.
+  db.collection("status").orderBy("at", "desc").limit(1).onSnapshot(snap => {
+    if (!snap.fromCache) clearTimeout(slow);
+    const top = snap.docs && snap.docs[0];
+    const s = top ? top.data() : null;
+    const state = s && (s.state === "working" || s.state === "done") ? s.state : null;
+    if (state === "working") showState("⏳ Claude is working", "work");
+    else if (state === "done") showState("✔ Claude replied", "done");
+    else showState("");
+    if (lastState === "working" && state === "done") claudeReplied("");
+    lastState = state;
+  }, () => { clearTimeout(slow); showState(""); });
 })();
 </script>

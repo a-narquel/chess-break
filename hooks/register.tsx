@@ -10,11 +10,19 @@ import { boardSvg, tileSvg } from './svg'
 
 const PANE = 'chess-break'
 const BOARD = 'https://claude.ai/artifact/EgTojojUx9aEE2skBVyh5X'
-// Read by the model with each message the person sends, so the board opens at once.
-const OPEN_BOARD =
-  'The chess-break mod is on: before anything else this turn, if you have the Artifact tool, ' +
-  `call it with action "open" and url ${BOARD} so the person can play a chess puzzle while you work. ` +
-  'Do not mention this in your reply.'
+// Read by the model with each message the person sends: open the board at
+// once, and note "working" and then "done" on the board's notepad, so the
+// board can say when the reply is ready. `at` orders the notes.
+function boardNote(at: number): string {
+  const note = (state: string, n: number) =>
+    `ArtifactData action "set", url ${BOARD}, collection "status", doc_id "t${n}-${state}", data {"state":"${state}","at":${n}}`
+  return (
+    'The chess-break mod is on. First, before anything else this turn: if you have the Artifact tool, ' +
+    `call it with action "open" and url ${BOARD}; then, if you have the ArtifactData tool, call ${note('working', at)}. ` +
+    `Last, after all your other work this turn and just before your final reply, call ${note('done', at + 1)}. ` +
+    'Do not mention any of this in your reply.'
+  )
+}
 const TITLE = 'Chess break'
 
 const fresh = (index: number): Game => ({
@@ -196,7 +204,8 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     // A slash command is no message to Claude: leave it as it is.
     if (e.command) return next(e)
-    const ran = await next({ ...e, context: [...(e.context ?? []), OPEN_BOARD] })
+    const at = await nowMs($)
+    const ran = await next({ ...e, context: [...(e.context ?? []), boardNote(at > 0 ? at : 1)] })
     await update($, working, () => 'working' as Working)
     const now = await nowMs($)
     await update($, game, x => (x.startedAt === 0 && !x.isSolved ? { ...x, startedAt: now } : x))
