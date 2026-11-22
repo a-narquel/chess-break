@@ -11,6 +11,7 @@ export type Game = {
 }
 export type Stats = { solved: number; streak: number; best: number }
 export type Working = 'idle' | 'working' | 'done'
+export type Drag = { from: string; over: string } | null
 
 declare module 'claude-code' {
   interface PluginState {
@@ -18,6 +19,7 @@ declare module 'claude-code' {
       game: Shaped<Game>
       stats: Shaped<Stats>
       working: Working
+      drag: Drag
     }
   }
 }

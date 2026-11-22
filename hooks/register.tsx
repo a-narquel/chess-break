@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Game, Stats, Working } from '../types'
+import type { Drag, Game, Stats, Working } from '../types'
 import type { BoardProps } from './board'
 import { applyMove, FILES, glyph, isWhite, matches, parseFen, san } from './chess'
 import type { Board, Puzzle } from './chess'
@@ -25,6 +25,11 @@ const fresh = (index: number): Game => ({
 const game = atom({ plugin: 'chess-break', key: 'game' } as const, fresh(0), { shape: 'game-2' })
 const stats = atom({ plugin: 'chess-break', key: 'stats' } as const, { solved: 0, streak: 0, best: 0 }, { shape: 'stats-1' })
 const working = atom({ plugin: 'chess-break', key: 'working' } as const, 'idle' as Working)
+const dragging = atom({ plugin: 'chess-break', key: 'drag' } as const, null as Drag)
+
+// A click can reach both the drag layer and the square's button beneath it:
+// the second report of the same square within a moment is the same click.
+let lastTap = { sq: '', at: 0 }
 
 const puzzle = (index: number): Puzzle => PUZZLES[index] ?? (PUZZLES[0] as Puzzle)
 const expected = (p: Puzzle, g: Game) => (g.stage === 0 ? p.a : (p.b ?? []))
@@ -89,6 +94,9 @@ async function move($: EngineInterface, from: string, to: string) {
 }
 
 async function tap($: EngineInterface, sq: string) {
+  const now = await $.clock.now()
+  if (lastTap.sq === sq && now - lastTap.at < 400) return
+  lastTap = { sq, at: now }
   const g = await read($, game)
   if (g.isSolved) return
   const { board, toMove } = position(g)
@@ -153,7 +161,11 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const was = await read($, working)
     await update($, working, () => 'done' as Working)
-    if (was === 'working') $.ui.toast('♟ Claude has replied: back to your session')
+    if (was === 'working') {
+      const text = "♟ Claude's done. Go back to the conversation, or finish your puzzle first."
+      const sent = await $.ui.notify(text, { title: 'Claude replied' }).catch(() => ({ isSent: false }))
+      if (!sent.isSent) $.ui.toast(text)
+    }
     return next(e)
   })
 
@@ -162,8 +174,20 @@ export const register: Register = on => {
     const g = await read($, game)
     const flip = position(g).toMove === 'b'
     const ok = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 64
-    if (d?.type === 'tap' && ok(d.idx)) await tap($, squareAt(d.idx, flip))
-    if (d?.type === 'move' && ok(d.from) && ok(d.to)) await move($, squareAt(d.from, flip), squareAt(d.to, flip))
+    const over = (d as { over?: unknown } | null)?.over
+    if (d?.type === 'drag' && ok(d.from) && ok(over)) {
+      const from = d.from
+      await update($, dragging, () => ({ from: squareAt(from, flip), over: squareAt(over, flip) }))
+    }
+    if (d?.type === 'tap' && ok(d.idx)) {
+      await update($, dragging, () => null)
+      await tap($, squareAt(d.idx, flip))
+    }
+    if (d?.type === 'move' && ok(d.from) && ok(d.to)) {
+      await update($, dragging, () => null)
+      lastTap = { sq: '', at: 0 }
+      await move($, squareAt(d.from, flip), squareAt(d.to, flip))
+    }
     return {}
   })
 
@@ -171,74 +195,107 @@ export const register: Register = on => {
     const g = await read($, game)
     const s = await read($, stats)
     const w = await read($, working)
+    const drag = await read($, dragging)
     const { p, board, toMove, last } = position(g)
     const flip = toMove === 'b'
     const hint = g.hinted && !g.isSolved ? expected(p, g)[0]?.slice(0, 2) : undefined
     const squares = Array.from({ length: 64 }, (_, i) => squareAt(i, flip))
-    const marks = squares.map(sq => (sq === g.selected ? 'sel' : sq === hint ? 'hint' : last.includes(sq) ? 'last' : ''))
+    const markOf = (sq: string) =>
+      drag && sq === drag.over && sq !== drag.from ? 'over'
+      : sq === g.selected || (drag && sq === drag.from) ? 'sel'
+      : sq === hint ? 'hint'
+      : last.includes(sq) ? 'last'
+      : ''
+    const MARK: Record<string, string> = { sel: '#e9cf4a', hint: '#5fb0ef', last: '#d6cf7a', over: '#f6f2e2' }
+
     // A text cell is about 2.4 times taller than wide, so a square is 2.4 columns per row.
-    // Fill the pane's width, but leave room under the board for the text and buttons.
+    // Fill the pane's width, leaving rows under the board for the text and buttons.
     const cols = e.props.bodyColumns ?? 40
-    const rowsFree = Math.max(10, (e.props.scroll?.bodyRows ?? 40) - 10)
+    const rowsFree = Math.max(10, (e.props.scroll?.bodyRows ?? 40) - 12)
     const byWidth = Math.floor((cols - 2) / 8)
     const cellH = Math.max(1, Math.min(Math.round(byWidth / 2.4), Math.floor(rowsFree / 8)))
     const cellW = Math.max(3, Math.min(byWidth, Math.round(cellH * 2.4)))
+    const size = cellH >= 3 ? 'title' : cellH === 2 ? 'heading' : 'body'
     const side = toMove === 'w' ? 'White' : 'Black'
+    const canDrag = e.surface === 'desktop' || e.surface === 'terminal'
 
-    const statusLine =
-      w === 'working' ? ['#d9a440', '⏳ Claude is working. Find the mate.'] as const
-      : w === 'done' ? ['#4cc27f', '✔ Claude replied. Back to your session!'] as const
-      : [undefined, 'Solve a mate while Claude works.'] as const
-    const hasClient = e.surface === 'desktop' || e.surface === 'terminal'
+    const { Box, Text, Button } = $.ui.resolve(e)
 
-    const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
-    const prompt = g.message || (hasClient ? 'Drag a piece, or click it and then its square.' : 'Click a piece, then its square.')
-
-    const r = $.ui.resolve(e)
-    const { Box, Text, Button } = r
-    let boardTree
-    if (e.surface === 'desktop' || e.surface === 'terminal') {
-      const { Client } = $.ui.resolve({ ...e, surface: e.surface })
-      const props: BoardProps = {
-        glyphs: squares.map(sq => glyph(board[sq])),
-        white: squares.map(sq => { const pc = board[sq]; return pc !== undefined && isWhite(pc) }),
-        own: squares.map(sq => { const pc = board[sq]; return pc !== undefined && isWhite(pc) === (toMove === 'w') }),
-        marks,
-        ranks: Array.from({ length: 8 }, (_, i) => String(flip ? i + 1 : 8 - i)),
-        files: flip ? [...FILES].reverse() : [...FILES],
-        cellW,
-        cellH,
-        selected: g.selected === null ? -1 : squares.indexOf(g.selected),
-        locked: g.isSolved,
-      }
-      boardTree = <Client key="board" module="./board.tsx" props={props} width={2 + 8 * cellW} height={8 * cellH + 1} />
-    } else {
-      boardTree = (
-        <Box flexDirection="column">
-          {Array.from({ length: 8 }, (_, row) => (
-            <Box flexDirection="row" key={`r${row}`}>
-              {Array.from({ length: 8 }, (_, c) => {
-                const i = row * 8 + c
-                const sq = squares[i] ?? ''
-                const pc = board[sq]
-                const bg = ({ sel: '#e9cf4a', hint: '#5fb0ef', last: '#d6cf7a' } as Record<string, string>)[marks[i] ?? ''] ?? ((row + c) % 2 === 0 ? '#ebe7d2' : '#6e9a76')
-                return (
+    const grid = (
+      <Box flexDirection="column">
+        {Array.from({ length: 8 }, (_, row) => (
+          <Box flexDirection="row" key={`r${row}`}>
+            <Box width={2} height={cellH} alignItems="center">
+              <Text dimColor>{flip ? row + 1 : 8 - row}</Text>
+            </Box>
+            {Array.from({ length: 8 }, (_, c) => {
+              const sq = squares[row * 8 + c] ?? ''
+              const pc = board[sq]
+              const bg = MARK[markOf(sq)] ?? ((row + c) % 2 === 0 ? '#ebe7d2' : '#6e9a76')
+              return (
+                <Box key={`b${sq}`} width={cellW} height={cellH} backgroundColor={bg} justifyContent="center" alignItems="center">
                   <Button key={sq} plain onPress={() => tap($, sq)}>
-                    <Text backgroundColor={bg} color={pc !== undefined && isWhite(pc) ? '#ffffff' : '#111111'} bold>
-                      {` ${glyph(pc) || ' '} `}
+                    <Text size={size} bold color={pc !== undefined && isWhite(pc) ? '#ffffff' : '#111111'} backgroundColor={bg}>
+                      {glyph(pc) || ' '}
                     </Text>
                   </Button>
-                )
-              })}
+                </Box>
+              )
+            })}
+          </Box>
+        ))}
+        <Box flexDirection="row">
+          <Box width={2} />
+          {(flip ? [...FILES].reverse() : [...FILES]).map(f => (
+            <Box key={`f${f}`} width={cellW} justifyContent="center">
+              <Text dimColor>{f}</Text>
             </Box>
           ))}
+        </Box>
+      </Box>
+    )
+
+    let boardTree = grid
+    if (canDrag) {
+      const { Client } = $.ui.resolve({ ...e, surface: e.surface as 'desktop' | 'terminal' })
+      const props: BoardProps = {
+        cellW,
+        cellH,
+        own: squares.map(sq => { const pc = board[sq]; return pc !== undefined && isWhite(pc) === (toMove === 'w') }),
+        locked: g.isSolved,
+      }
+      boardTree = (
+        <Box>
+          {grid}
+          <Box position="absolute" top={0} left={2}>
+            <Client key="board" module="./board.tsx" props={props} width={8 * cellW} height={8 * cellH} />
+          </Box>
         </Box>
       )
     }
 
+    const banner =
+      w === 'done' ? (
+        <Box flexDirection="column" gap={1} borderStyle="round" borderColor="#4cc27f" paddingX={1}>
+          <Text color="#4cc27f" bold>✔ Claude's done.</Text>
+          <Box flexDirection="row" gap={1}>
+            <Button key="back" label="Back to conversation" variant="primary" hotkey="b" onPress={async () => {
+              await update($, working, () => 'idle' as Working)
+              await $.ui.close({ id: PANE })
+            }} />
+            <Button key="stay" label="Finish puzzle" onPress={() => update($, working, () => 'idle' as Working)} />
+          </Box>
+        </Box>
+      ) : w === 'working' ? (
+        <Text color="#d9a440">⏳ Claude is working. Find the mate.</Text>
+      ) : null
+
+    const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
+    const prompt = g.message || (canDrag ? 'Drag a piece, or click it and then its square.' : 'Click a piece, then its square.')
+
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color={statusLine[0]} bold={w === 'done'}>{statusLine[1]}</Text>
+        {banner}
         <Text bold>
           Mate in {p.n} · {side} to move <Text dimColor>#{g.index + 1} of {PUZZLES.length}</Text>
         </Text>

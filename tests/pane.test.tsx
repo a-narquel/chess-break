@@ -13,8 +13,8 @@ const PANE = {
   },
 } as const
 
-// Cell sizes the pane picks at 60 columns: (60-2)/8 = 7 wide, 3 tall, 2 columns of rank labels.
-const W = 7, H = 3, LEFT = 2
+// Cell sizes the pane picks at 60 columns: (60-2)/8 = 7 wide, 3 tall. The drag layer starts at the board's edge.
+const W = 7, H = 3, LEFT = 0
 
 function cellOf(sq: string, flip: boolean) {
   const f = FILES.indexOf(sq[0]!)
@@ -58,6 +58,8 @@ test('a wrong drag is refused and resets nothing else', async ($, on) => {
 
 test('vscode and mobile get a board of clickable squares', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
+  let t = 0
+  on('clock.now', () => ({ value: (t += 1000) }))
   const p = PUZZLES[0]!
   for (const surface of ['vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
@@ -67,6 +69,43 @@ test('vscode and mobile get a board of clickable squares', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
   await ui.press({ key: p.a[0]!.slice(0, 2) })
   await ui.press({ key: p.a[0]!.slice(2, 4) })
+  expect((await ui.find({ type: 'Text', text: /Checkmate|finish it/ }))).toBeTruthy()
+  await ui.unmount()
+})
+
+test('when Claude is done, the pane offers to go back or keep playing', async ($, on) => {
+  on('store.set', () => ({ value: undefined }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.notify', () => ({ value: { isSent: false, reason: 'none' } }))
+  on('ui.toast', () => ({ value: undefined }))
+  let closed = ''
+  on('ui.close', (_, e) => { closed = e.id; return { value: undefined } })
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /Claude's done/ }))?.text).toContain("Claude's done")
+  await ui.press({ key: 'back' })
+  expect(closed).toBe('chess-break')
+  await ui.unmount()
+})
+
+test('one click that reaches both the drag layer and the button counts once', async ($, on) => {
+  on('store.set', () => ({ value: undefined }))
+  on('clock.now', () => ({ value: 5000 }))
+  const p = PUZZLES[0]!
+  const flip = parseFen(p.fen).turn === 'b'
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const from = p.a[0]!.slice(0, 2)
+  const a = cellOf(from, flip)
+  await ui.pointer({ type: 'down', x: a.x, y: a.y, button: 'left' })
+  await ui.pointer({ type: 'up', x: a.x, y: a.y, button: 'left' })
+  await ui.press({ key: from })
+  expect((await ui.find({ type: 'Text', text: /Now pick|Drag a piece/ }))).toBeTruthy()
+  const to = p.a[0]!.slice(2, 4)
+  await ui.press({ key: to })
   expect((await ui.find({ type: 'Text', text: /Checkmate|finish it/ }))).toBeTruthy()
   await ui.unmount()
 })
