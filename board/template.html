@@ -1,0 +1,427 @@
+<title>Prompt Gap Chess</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: the board is the page. A slim status bar above it, a slim control bar under it. */
+:root {
+  --bg: #f3f2ee;
+  --panel: #ffffff;
+  --ink: #1d1f1c;
+  --muted: #6b6f68;
+  --line: #dcdcd4;
+  --light: #ebecd0;
+  --dark: #739552;
+  --hl-light: #f5f682;
+  --hl-dark: #b9ca43;
+  --accent: #81b64c;
+  --accent-ink: #ffffff;
+  --good: #5d9a2c;
+  --bad: #d4513f;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #262522; --panel: #302e2b; --ink: #f2f1ee; --muted: #a8a59e; --line: #403e3a;
+  --good: #8ac24a; --bad: #ef7660; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #262522; --panel: #302e2b; --ink: #f2f1ee; --muted: #a8a59e; --line: #403e3a;
+  --good: #8ac24a; --bad: #ef7660; color-scheme: dark }
+
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font);
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  padding-block: 12px; box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent; user-select: none;
+}
+.app { --size: min(100%, calc(100vh - 150px), 900px); display: flex; flex-direction: column; align-items: center; gap: 10px; height: 100%; }
+.bar { width: var(--size); min-width: 260px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.task { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05rem; }
+.side { width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--muted); }
+.side.w { background: #fff; } .side.b { background: #222; }
+.meta { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; display: flex; gap: 12px; }
+.streak { color: #e2832b; font-weight: 700; }
+
+.board {
+  width: var(--size); min-width: 260px; aspect-ratio: 1 / 1; position: relative;
+  display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+  border-radius: 4px; overflow: hidden; touch-action: none; box-shadow: 0 10px 30px -12px rgba(0,0,0,.5);
+}
+.sq { position: relative; }
+.sq.l { background: var(--light); } .sq.d { background: var(--dark); }
+.sq.l.hl { background: var(--hl-light); } .sq.d.hl { background: var(--hl-dark); }
+.sq.bad::after { content: ""; position: absolute; inset: 0; background: rgba(220, 60, 40, .55); animation: fade .7s ease forwards; }
+.sq.mate { background: radial-gradient(circle, #ff6b55 0%, #d93d2b 60%, var(--dark) 100%) !important; }
+.sq.hint::after { content: ""; position: absolute; inset: 0; background: rgba(80, 150, 240, .5); animation: pulse 1s ease-in-out infinite alternate; }
+.sq.over::before { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 5px rgba(255,255,255,.75); z-index: 1; }
+.dot { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 2; }
+.dot::after { content: ""; width: 32%; height: 32%; border-radius: 50%; background: rgba(0,0,0,.16); }
+.dot.cap::after { width: 86%; height: 86%; background: transparent; box-shadow: inset 0 0 0 calc(var(--cell) * .08) rgba(0,0,0,.16); }
+@keyframes fade { from { opacity: 1 } to { opacity: 0 } }
+@keyframes pulse { from { opacity: .4 } to { opacity: 1 } }
+.coord { position: absolute; font-weight: 700; font-size: calc(var(--cell) * .17); pointer-events: none; }
+.coord.r { left: 4%; top: 3%; } .coord.f { right: 5%; bottom: 2%; }
+.sq.l .coord { color: var(--dark); } .sq.d .coord { color: var(--light); }
+.pc { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; z-index: 3; transition: transform .16s ease; }
+.pc.ghost { opacity: .3; }
+.pc.lifted { transform: translateY(-6%) scale(1.06); filter: drop-shadow(0 6px 4px rgba(0,0,0,.35)); }
+.board.locked .pc { cursor: default; }
+.float { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -50%) scale(1.12); filter: drop-shadow(0 10px 8px rgba(0,0,0,.4)); }
+.glide { position: fixed; z-index: 40; pointer-events: none; transition: transform .26s cubic-bezier(.2,.8,.3,1); }
+.board.shake { animation: shake .3s ease; }
+@keyframes shake { 20%,60% { transform: translateX(-5px) } 40%,80% { transform: translateX(5px) } }
+
+.msg { min-height: 1.4em; font-weight: 600; text-align: center; }
+.msg.good { color: var(--good); } .msg.bad { color: var(--bad); }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+button {
+  font: 600 .9rem var(--font); border-radius: 6px; padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  box-shadow: 0 2px 0 var(--line);
+}
+button:active { transform: translateY(1px); box-shadow: none; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: #5f8f35; box-shadow: 0 3px 0 #5f8f35; }
+[hidden] { display: none !important; }
+.burst { position: fixed; width: 8px; height: 8px; border-radius: 2px; pointer-events: none; z-index: 60; }
+.credit { font-size: .7rem; color: var(--muted); }
+.claude { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); }
+.pill { padding: 3px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-weight: 600; }
+.pill.work { color: #c98a1b; } .pill.done { color: var(--good); }
+.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: .85rem; color: var(--muted); }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+.toast { position: fixed; left: 50%; top: max(14px, env(safe-area-inset-top, 0px)); transform: translate(-50%, -140%); transition: transform .3s cubic-bezier(.2,.8,.3,1);
+  background: var(--accent); color: #fff; font-weight: 700; padding: 10px 18px; border-radius: 10px; z-index: 80; box-shadow: 0 10px 30px -10px rgba(0,0,0,.5); }
+.toast.show { transform: translate(-50%, 0); }
+.overlay { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(20, 24, 18, .82); color: #fff; text-align: center; padding: 24px; }
+.overlay h2 { font-size: clamp(1.4rem, 5vw, 2.2rem); margin: 0 0 8px; }
+.overlay p { margin: 0 0 18px; color: #d9e4cf; }
+.overlay .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .board.shake, .sq.hint::after { animation: none; } .pc, .glide { transition: none; } }
+</style>
+
+<main class="app">
+  <div class="bar">
+    <div class="task"><span class="side w" id="side"></span><span id="task">White to move · mate in 1</span></div>
+    <div class="meta"><span class="streak" id="streak"></span><span id="clock">0:00</span><span id="count">#1</span></div>
+  </div>
+  <div class="board" id="board" aria-label="Chess board"></div>
+  <div class="msg" id="msg">Drag a piece to deliver checkmate.</div>
+  <div class="controls">
+    <button id="hint">Hint</button>
+    <button id="solution">Solution</button>
+    <button id="next">Skip</button>
+    <button id="sound" aria-pressed="true">Sound on</button>
+  </div>
+  <div class="claude">
+    <span class="pill" id="claudeState" hidden></span>
+    <label class="toggle"><input type="checkbox" id="autoBack"> Stop me when Claude replies</label>
+    <button id="alerts" hidden>Turn on Claude alerts</button>
+  </div>
+  <div class="credit">Pieces: Cburnett (Colin M.L. Burnett), GPL-2.0-or-later · Solved <span id="solved">0</span> · best streak <span id="best">0</span></div>
+</main>
+<div class="toast" id="toast" role="status">✔ Claude replied</div>
+<div class="overlay" id="overlay" hidden>
+  <div>
+    <h2>Claude replied</h2>
+    <p>Your answer is ready. Head back to the chat; a fresh puzzle waits for next time.</p>
+    <div class="row"><button class="primary" id="gotIt">Back to Claude</button><button id="keep">Finish this puzzle</button></div>
+  </div>
+</div>
+
+<script>
+const ALL = __PUZZLES__;
+const PIECE = __PIECES__;
+const FILES = "abcdefgh";
+const NAME = { k: "K", q: "Q", r: "R", b: "B", n: "N", p: "" };
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("pgc:" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("pgc:" + k, JSON.stringify(v)); } catch {} },
+};
+const IMG = {};
+for (const [k, svg] of Object.entries(PIECE)) IMG[k] = "data:image/svg+xml;base64," + btoa(svg);
+
+let idx = store.get("idx", 0);
+// A new puzzle each visit: after Claude replied or the last one was solved, move on.
+if (store.get("advance", false)) { idx++; store.set("advance", false); }
+let stats = store.get("stats2", { solved: 0, streak: 0, best: 0 });
+let sound = store.get("sound", true);
+let p, board, turn, flip, stage, selected, done, last, hinted, missed, started;
+
+// ---------- rules, enough for puzzles ----------
+function parseFen(fen) {
+  const [pl, side] = fen.split(" "); const b = {};
+  pl.split("/").forEach((row, i) => { let f = 0; for (const ch of row) { if (/\d/.test(ch)) f += +ch; else { b[FILES[f] + (8 - i)] = ch; f++; } } });
+  return { b, side };
+}
+const isW = x => x === x.toUpperCase();
+function apply(b, uci) {
+  const n = { ...b }, fr = uci.slice(0, 2), to = uci.slice(2, 4), pr = uci[4], pc = n[fr]; if (!pc) return n;
+  const lo = pc.toLowerCase(), df = FILES.indexOf(to[0]) - FILES.indexOf(fr[0]);
+  if (lo === "k" && Math.abs(df) === 2) { const r = fr[1], [a, c] = df > 0 ? ["h" + r, "f" + r] : ["a" + r, "d" + r]; n[c] = n[a]; delete n[a]; }
+  if (lo === "p" && df !== 0 && !n[to]) delete n[to[0] + fr[1]];
+  delete n[fr]; n[to] = pr ? (isW(pc) ? pr.toUpperCase() : pr) : pc; return n;
+}
+function san(b, uci) {
+  const fr = uci.slice(0, 2), to = uci.slice(2, 4), pc = b[fr]; if (!pc) return uci; const lo = pc.toLowerCase();
+  if (lo === "k" && Math.abs(FILES.indexOf(to[0]) - FILES.indexOf(fr[0])) === 2) return to[0] === "g" ? "O-O" : "O-O-O";
+  const cap = !!b[to] || (lo === "p" && fr[0] !== to[0]);
+  return (lo === "p" ? (cap ? fr[0] : "") : NAME[lo]) + (cap ? "x" : "") + to + (uci[4] ? "=" + uci[4].toUpperCase() : "");
+}
+function targets(b, fr) {
+  const pc = b[fr]; if (!pc) return []; const w = isW(pc), f0 = FILES.indexOf(fr[0]), r0 = +fr[1], out = [];
+  const at = (f, r) => f >= 0 && f < 8 && r >= 1 && r <= 8 ? FILES[f] + r : null;
+  const enemy = s => b[s] && isW(b[s]) !== w;
+  const ride = (dirs, far) => { for (const [df, dr] of dirs) for (let k = 1; k < 8; k++) { const s = at(f0 + df * k, r0 + dr * k); if (!s) break; if (!b[s]) out.push(s); else { if (enemy(s)) out.push(s); break; } if (!far) break; } };
+  const st = [[1,0],[-1,0],[0,1],[0,-1]], dg = [[1,1],[1,-1],[-1,1],[-1,-1]];
+  switch (pc.toLowerCase()) {
+    case "r": ride(st, true); break; case "b": ride(dg, true); break; case "q": ride([...st, ...dg], true); break;
+    case "k": ride([...st, ...dg], false); { const rights = p.fen.split(" ")[2] || "", h = w ? 1 : 8;
+      if (fr === "e" + h) { if (rights.includes(w ? "K" : "k") && !b["f" + h] && !b["g" + h]) out.push("g" + h);
+        if (rights.includes(w ? "Q" : "q") && !b["d" + h] && !b["c" + h] && !b["b" + h]) out.push("c" + h); } } break;
+    case "n": for (const [df, dr] of [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]]) { const s = at(f0 + df, r0 + dr); if (s && (!b[s] || enemy(s))) out.push(s); } break;
+    case "p": { const d = w ? 1 : -1, one = at(f0, r0 + d);
+      if (one && !b[one]) { out.push(one); const two = at(f0, r0 + 2 * d); if ((w ? r0 === 2 : r0 === 7) && two && !b[two]) out.push(two); }
+      const ep = p.fen.split(" ")[3]; for (const df of [-1, 1]) { const s = at(f0 + df, r0 + d); if (s && (enemy(s) || s === ep)) out.push(s); } }
+  }
+  const ans = expected().filter(m => m.slice(0, 2) === fr).map(m => m.slice(2, 4));
+  return [...new Set([...out, ...ans])];
+}
+const expected = () => (stage === 0 ? p.a : p.b);
+
+// ---------- sound: short synthesized clicks, started by the first touch ----------
+let ctx = null;
+function tone(freq, dur, type = "sine", gain = .12, when = 0) {
+  if (!sound) return;
+  try {
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    const t = ctx.currentTime + when, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur);
+  } catch {}
+}
+const sfx = {
+  move: () => { tone(420, .07, "triangle", .16); tone(260, .09, "sine", .1, .015); },
+  capture: () => { tone(180, .12, "square", .08); tone(520, .06, "triangle", .1); },
+  wrong: () => { tone(140, .18, "sawtooth", .06); },
+  win: () => { [523, 659, 784, 1046].forEach((f, i) => tone(f, .22, "triangle", .12, i * .09)); },
+};
+
+// ---------- drawing ----------
+const sqEl = s => document.querySelector(`.sq[data-sq="${s}"]`);
+function load() {
+  idx = ((idx % ALL.length) + ALL.length) % ALL.length; store.set("idx", idx);
+  p = ALL[idx]; const f = parseFen(p.fen); board = f.b; turn = f.side; flip = turn === "b";
+  stage = 0; selected = null; done = false; last = []; hinted = false; missed = false; started = Date.now();
+  $("side").className = "side " + turn;
+  $("task").textContent = (turn === "w" ? "White" : "Black") + " to move · mate in " + p.n;
+  $("count").textContent = "#" + (idx + 1);
+  $("next").textContent = "Skip"; $("next").classList.remove("primary");
+  $("hint").hidden = $("solution").hidden = false;
+  say(p.n === 1 ? "Find the move that mates." : "Find the first move. Every defence then allows mate.");
+  $("board").classList.remove("locked");
+  render(); stat();
+}
+function say(t, kind) { const m = $("msg"); m.textContent = t; m.className = "msg" + (kind ? " " + kind : ""); }
+function stat() {
+  $("solved").textContent = stats.solved; $("best").textContent = stats.best;
+  $("streak").textContent = stats.streak >= 2 ? "🔥 " + stats.streak + " in a row" : "";
+}
+function render(opts = {}) {
+  const el = $("board"); el.innerHTML = "";
+  el.style.setProperty("--cell", el.clientWidth / 8 + "px");
+  const dots = selected ? targets(board, selected) : [];
+  const hint = hinted && !done ? expected()[0].slice(0, 2) : null;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const file = flip ? FILES[7 - c] : FILES[c], rank = flip ? r + 1 : 8 - r, s = file + rank;
+    const d = document.createElement("div");
+    d.className = "sq " + ((r + c) % 2 === 0 ? "l" : "d"); d.dataset.sq = s;
+    if (last.includes(s) || s === selected) d.classList.add("hl");
+    if (s === hint) d.classList.add("hint");
+    if (s === opts.bad) d.classList.add("bad");
+    if (s === opts.mate) d.classList.add("mate");
+    if (c === 0) d.insertAdjacentHTML("beforeend", `<span class="coord r">${rank}</span>`);
+    if (r === 7) d.insertAdjacentHTML("beforeend", `<span class="coord f">${file}</span>`);
+    if (board[s] && s !== opts.hide) {
+      const img = document.createElement("img"); img.className = "pc" + (s === selected ? " lifted" : ""); img.src = IMG[board[s]]; img.alt = board[s]; img.draggable = false;
+      d.appendChild(img);
+    }
+    if (dots.includes(s)) d.insertAdjacentHTML("beforeend", `<span class="dot${board[s] ? " cap" : ""}"></span>`);
+    el.appendChild(d);
+  }
+}
+// A piece glides from one square to another, then the board is redrawn.
+function glide(fr, to, pieceCode, then) {
+  const a = sqEl(fr), b = sqEl(to);
+  if (!a || !b || matchMedia("(prefers-reduced-motion: reduce)").matches) { then(); return; }
+  const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+  const g = document.createElement("img"); g.src = IMG[pieceCode]; g.className = "glide";
+  Object.assign(g.style, { left: ra.left + "px", top: ra.top + "px", width: ra.width + "px", height: ra.height + "px" });
+  document.body.appendChild(g);
+  const src = a.querySelector(".pc"); if (src) src.style.visibility = "hidden";
+  requestAnimationFrame(() => { g.style.transform = `translate(${rb.left - ra.left}px, ${rb.top - ra.top}px)`; });
+  setTimeout(() => { g.remove(); then(); }, 270);
+}
+function burst(s) {
+  const r = sqEl(s)?.getBoundingClientRect(); if (!r) return;
+  const colors = ["#81b64c", "#f5f682", "#ffffff", "#e2832b", "#5aa9e6"];
+  for (let i = 0; i < 26; i++) {
+    const b = document.createElement("div"); b.className = "burst"; b.style.background = colors[i % colors.length];
+    b.style.left = r.left + r.width / 2 + "px"; b.style.top = r.top + r.height / 2 + "px"; document.body.appendChild(b);
+    const ang = Math.random() * Math.PI * 2, dist = 50 + Math.random() * 90;
+    b.animate([{ transform: "translate(0,0) rotate(0)", opacity: 1 }, { transform: `translate(${Math.cos(ang) * dist}px, ${Math.sin(ang) * dist}px) rotate(${Math.random() * 540}deg)`, opacity: 0 }], { duration: 700 + Math.random() * 300, easing: "cubic-bezier(.2,.8,.3,1)" }).onfinish = () => b.remove();
+  }
+}
+
+// ---------- playing ----------
+function own(s) { return board[s] && isW(board[s]) === (turn === "w"); }
+function play(fr, to, dragged) {
+  const cand = expected().filter(m => m.slice(0, 4) === fr + to);
+  const m = cand.find(x => x.length === 4 || x[4] === "q") || cand[0];
+  selected = null;
+  if (!m) {
+    missed = true; if (stats.streak) { stats.streak = 0; store.set("stats2", stats); stat(); }
+    sfx.wrong(); say(san(board, fr + to) + " doesn't force mate. Try again.", "bad");
+    const el = $("board"); el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake");
+    render({ bad: to }); return;
+  }
+  const isCap = !!board[to]; const text = san(board, m); const pc = board[fr];
+  const finish = () => {
+    board = apply(board, m); last = [fr, to]; (isCap ? sfx.capture : sfx.move)();
+    if (stage === 0 && p.n === 2) {
+      stage = 1; say(text + "! Now watch their reply…", "good"); render(); $("board").classList.add("locked");
+      setTimeout(() => {
+        const rpc = board[p.r.slice(0, 2)], rcap = !!board[p.r.slice(2, 4)], rtext = san(board, p.r);
+        glide(p.r.slice(0, 2), p.r.slice(2, 4), rpc, () => {
+          board = apply(board, p.r); last = [p.r.slice(0, 2), p.r.slice(2, 4)]; (rcap ? sfx.capture : sfx.move)();
+          $("board").classList.remove("locked"); say("They played " + rtext + ". Finish it."); render();
+        });
+      }, 450);
+      return;
+    }
+    win(text);
+  };
+  if (dragged) finish(); else glide(fr, to, pc, finish);
+}
+function win(text) {
+  done = true; const secs = Math.round((Date.now() - started) / 1000);
+  stats.solved++; if (!hinted && !missed) { stats.streak++; stats.best = Math.max(stats.best, stats.streak); } else stats.streak = 0;
+  store.set("stats2", stats); stat(); store.set("advance", true);
+  const loser = turn === "w" ? "k" : "K"; const kingSq = Object.keys(board).find(s => board[s] === loser);
+  say(text + "# Checkmate in " + fmt(secs) + "!", "good");
+  render({ mate: kingSq }); $("board").classList.add("locked"); sfx.win(); burst(kingSq);
+  $("next").textContent = "Next puzzle"; $("next").classList.add("primary"); $("hint").hidden = $("solution").hidden = true;
+}
+const fmt = s => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+
+// Drag and click share one path: press on your piece to pick it up, release on
+// another square to play there; a press and release on the same square selects it.
+let drag = null;
+function sqAt(x, y) { const t = document.elementFromPoint(x, y); const s = t && t.closest && t.closest(".sq"); return s && $("board").contains(s) ? s.dataset.sq : null; }
+$("board").addEventListener("pointerdown", e => {
+  if (done || $("board").classList.contains("locked")) return;
+  const s = sqAt(e.clientX, e.clientY); if (!s) return;
+  if (!own(s)) { if (selected) play(selected, s, false); return; }
+  e.preventDefault();
+  const wasSel = selected === s; selected = s; render();
+  const src = sqEl(s).querySelector(".pc"), r = src.getBoundingClientRect();
+  const fl = document.createElement("img"); fl.src = src.src; fl.className = "float";
+  Object.assign(fl.style, { width: r.width + "px", height: r.height + "px", left: e.clientX + "px", top: e.clientY + "px" });
+  document.body.appendChild(fl); src.classList.add("ghost");
+  drag = { from: s, fl, wasSel, over: null, moved: false, x: e.clientX, y: e.clientY };
+  $("board").setPointerCapture(e.pointerId);
+});
+$("board").addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true;
+  drag.fl.style.left = e.clientX + "px"; drag.fl.style.top = e.clientY + "px";
+  const s = sqAt(e.clientX, e.clientY);
+  if (s !== drag.over) { document.querySelectorAll(".sq.over").forEach(n => n.classList.remove("over")); if (s && s !== drag.from) sqEl(s).classList.add("over"); drag.over = s; }
+});
+function endDrag(e, cancel) {
+  if (!drag) return; const d = drag; drag = null; d.fl.remove();
+  const s = cancel ? null : sqAt(e.clientX, e.clientY);
+  if (s && s !== d.from) { play(d.from, s, true); return; }
+  if (s === d.from && d.wasSel && !d.moved) selected = null;
+  render();
+}
+$("board").addEventListener("pointerup", e => endDrag(e, false));
+$("board").addEventListener("pointercancel", e => endDrag(e, true));
+
+$("hint").onclick = () => { if (done) return; hinted = true; if (stats.streak) { stats.streak = 0; store.set("stats2", stats); stat(); } say("The glowing piece moves first."); render(); };
+$("solution").onclick = () => {
+  if (done) return; hinted = true; stats.streak = 0; store.set("stats2", stats); stat();
+  const b0 = parseFen(p.fen).b; let line = san(b0, p.a[0]);
+  if (p.n === 2) { const b1 = apply(b0, p.a[0]); line += "  " + san(b1, p.r) + "  " + san(apply(b1, p.r), p.b[0]); }
+  say("Solution: " + line + "#");
+};
+$("next").onclick = () => { store.set("advance", false); if (!done && stats.streak) { stats.streak = 0; store.set("stats2", stats); } idx++; load(); };
+$("sound").onclick = () => { sound = !sound; store.set("sound", sound); $("sound").textContent = sound ? "Sound on" : "Sound off"; $("sound").setAttribute("aria-pressed", String(sound)); };
+$("sound").textContent = sound ? "Sound on" : "Sound off";
+setInterval(() => { if (!done && started) $("clock").textContent = fmt(Math.floor((Date.now() - started) / 1000)); }, 1000);
+new ResizeObserver(() => { if (!drag) render(); }).observe($("board"));
+load();
+
+// ---------- Claude status: watch this person's Claude Code sessions ----------
+let autoBack = store.get("autoBack", false);
+$("autoBack").checked = autoBack;
+$("autoBack").onchange = e => { autoBack = e.target.checked; store.set("autoBack", autoBack); };
+let toastTimer = 0;
+function toast(text) {
+  const el = $("toast"); el.textContent = text; el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 4000);
+}
+function claudeReplied(title) {
+  store.set("advance", true);
+  [784, 988, 1175].forEach((f, i) => tone(f, .18, "triangle", .1, i * .08));
+  if (autoBack) { $("overlay").hidden = false; $("gotIt").focus(); }
+  else toast("✔ Claude replied" + (title ? ": " + title.slice(0, 40) : ""));
+}
+$("gotIt").onclick = () => { $("overlay").hidden = true; idx++; store.set("advance", false); load(); };
+$("keep").onclick = () => { $("overlay").hidden = true; };
+
+const WORKING = "SESSION_STATUS_BUCKET_WORKING";
+let mcp = null, polling = 0, wasWorking = new Map(), seenOnce = false;
+function sessionsOf(payload) {
+  const root = payload && (payload.ccr || payload);
+  return Array.isArray(root?.data) ? root.data : [];
+}
+function showState(text, kind) {
+  const el = $("claudeState"); el.hidden = !text; el.textContent = text || ""; el.className = "pill" + (kind ? " " + kind : "");
+}
+async function poll() {
+  if (!mcp || document.hidden) return;
+  try {
+    const res = await mcp.callTool("Claude Code Remote", "list_sessions", { mine: true, limit: 8 }, { cache: false });
+    const list = sessionsOf(res.payload);
+    let anyWorking = false;
+    for (const s of list) {
+      const working = s.status_bucket === WORKING;
+      if (working) anyWorking = true;
+      if (seenOnce && wasWorking.get(s.id) && !working) claudeReplied(s.title);
+      wasWorking.set(s.id, working);
+    }
+    seenOnce = true;
+    showState(anyWorking ? "⏳ Claude is working" : "✔ Claude is idle", anyWorking ? "work" : "done");
+    $("alerts").hidden = true;
+  } catch (err) {
+    const code = err && err.code;
+    if (code === "approval_required" || code === "not_in_manifest") { stopPolling(); $("alerts").hidden = false; showState(""); }
+    else if (code === "server_not_connected" || code === "needs_reauth" || code === "not_granted" || code === "capability_disabled" || code === "blocked_by_policy") {
+      stopPolling(); showState("Claude alerts are unavailable here");
+    } // anything else is transient: the next poll tries again
+  }
+}
+function startPolling() { if (!polling) { polling = setInterval(poll, 5000); poll(); } }
+function stopPolling() { clearInterval(polling); polling = 0; }
+$("alerts").onclick = () => { $("alerts").hidden = true; startPolling(); };
+document.addEventListener("visibilitychange", () => { if (!document.hidden && mcp && polling) poll(); });
+(async () => {
+  try { mcp = window.claude && window.claude.use ? await window.claude.use("mcp") : null; } catch { mcp = null; }
+  if (!mcp) return; // no connector here: the board works on its own
+  startPolling();
+})();
+</script>

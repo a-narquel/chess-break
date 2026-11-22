@@ -40,6 +40,23 @@ claude plugin install chess-break --marketplace a-narquel/chess-break
 
 In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `a-narquel/chess-break`, then Add plugin.
 
+## Puzzles
+
+There are 682: 519 mate in 1 and 163 mate in 2, made from computer self-play and checked with
+python-chess (`tools/generate.py`). They live in `puzzles/puzzles.json`.
+
+To add more, use the [Lichess puzzle database](https://database.lichess.org/#puzzles), free under
+CC0, with over 4 million rated puzzles:
+
+```bash
+pip install chess zstandard
+python3 tools/import_lichess.py lichess_db_puzzle.csv.zst --count 2000 --min-rating 800 --max-rating 1800
+python3 tools/build.py
+```
+
+`build.py` writes `board/index.html` and `hooks/puzzles.ts`. Then ask Claude to republish
+`board/index.html` to the board's artifact so the page picks them up.
+
 ## Credits and license
 
 The chess pieces are the Cburnett set by [Colin M.L. Burnett](https://en.wikipedia.org/wiki/User:Cburnett),
