@@ -108,3 +108,41 @@ export function boardSvg({ board, flip, marks, dots: targetDots = [], dragFrom, 
   out.push('</svg>')
   return out.join('')
 }
+
+// One square as its own small picture, for a board made of 64 tiles: its piece,
+// a dot where the picked piece may go, the piece lifted when it was picked, a
+// gentle drop when it just arrived, and the edge coordinates.
+export type TileInput = {
+  piece?: string
+  dot?: 'move' | 'capture'
+  isLifted?: boolean
+  hasArrived?: boolean
+  rank?: string
+  file?: string
+  labelColor: string
+}
+
+export function tileSvg({ piece, dot, isLifted, hasArrived, rank, file, labelColor }: TileInput): string {
+  const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">`]
+  if (rank) out.push(`<text x="5" y="19" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="${labelColor}">${rank}</text>`)
+  if (file) out.push(`<text x="93" y="94" font-family="Arial, sans-serif" font-size="17" font-weight="700" text-anchor="end" fill="${labelColor}">${file}</text>`)
+  if (piece && isLifted) {
+    out.push(
+      `<ellipse cx="50" cy="90" rx="30" ry="8" fill="rgba(0,0,0,.4)"/>` +
+        `<g transform="translate(50 50) scale(1.12) translate(-50 -58)"><g>` +
+        `<animateTransform attributeName="transform" type="translate" values="0 0;0 -4;0 0" dur="1.4s" repeatCount="indefinite"/>` +
+        `${pieceSvg(piece, 0, 0)}</g></g>`,
+    )
+  } else if (piece && hasArrived) {
+    out.push(
+      `<g><animateTransform attributeName="transform" type="translate" values="0 -10;0 0" dur="0.22s" fill="freeze"/>` +
+        `${pieceSvg(piece, 0, 0)}</g>`,
+    )
+  } else if (piece) {
+    out.push(pieceSvg(piece, 0, 0))
+  }
+  if (dot === 'move') out.push(`<circle cx="50" cy="50" r="15" fill="rgba(0,0,0,.2)"/>`)
+  if (dot === 'capture') out.push(`<circle cx="50" cy="50" r="44" fill="none" stroke="rgba(0,0,0,.2)" stroke-width="10"/>`)
+  out.push('</svg>')
+  return out.join('')
+}

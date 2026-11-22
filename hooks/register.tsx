@@ -6,7 +6,7 @@ import type { BoardProps } from './board'
 import { applyMove, FILES, glyph, isWhite, matches, parseFen, san, targets } from './chess'
 import type { Board, Puzzle } from './chess'
 import { PUZZLES } from './puzzles'
-import { boardSvg } from './svg'
+import { boardSvg, tileSvg } from './svg'
 
 const PANE = 'chess-break'
 const TITLE = 'Chess break'
@@ -137,6 +137,9 @@ async function tap($: EngineInterface, sq: string) {
     await update($, game, x => ({ ...x, wrongSq: null, selected: x.selected === sq ? null : sq }))
   } else if (g.selected !== null) {
     await move($, g.selected, sq)
+  } else {
+    const side = toMove === 'w' ? 'white' : 'black'
+    await update($, game, x => ({ ...x, tone: 'plain' as const, message: `${sq} has none of your pieces: click a ${side} piece.` }))
   }
 }
 
@@ -332,31 +335,53 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
     // matched to the picture's pixels: a share-based size comes out empty in the
     // browser. Each button's blank label fills its square, so a click anywhere on
     // a square presses it.
-    const clickableBoard = (picture: ReturnType<typeof Box>, sizePx: number) => {
-      const gridCols = Math.max(8, Math.round(sizePx / 8.33))
-      const gridRows = Math.max(8, Math.round(sizePx / 19.5))
-      const blankCols = Math.max(1, Math.floor(gridCols / 8) - 1)
-      const blankRows = Math.max(1, Math.floor(gridRows / 8))
-      const blank = Array.from({ length: blankRows }, () => '\u00a0'.repeat(blankCols)).join('\n')
+    const arrivedRecently = g.slide !== null && (await nowMs($)) - g.movedAt < 900
+    // The board as 64 tiles, each its own small picture with a see-through
+    // button over it: a click on a tile is that square, whatever size the app
+    // draws a text cell. Tiles are sized in cells (about 8.3 by 19.5 pixels).
+    const TILE: Record<string, [string, string]> = {
+      sel: ['#f5f682', '#b9ca43'], last: ['#f5f682', '#b9ca43'], hint: ['#a9d0f5', '#6fa6d9'],
+      mate: ['#ee8170', '#d9584a'], bad: ['#f1a596', '#d97b6c'],
+    }
+    const tiledBoard = (sizePx: number) => {
+      const cw = Math.max(3, Math.round(sizePx / 8 / 8.33))
+      const ch = Math.max(2, Math.round(sizePx / 8 / 19.5))
+      const tilePx = Math.max(20, Math.floor(Math.min(cw * 8.33, ch * 19.5)) - 1)
+      const blank = Array.from({ length: ch }, () => '\u00a0'.repeat(Math.max(1, cw - 1))).join('\n')
+      const renderedSlide = g.slide && g.movedAt > 0 ? g.slide.slice(2, 4) : undefined
+      const { Svg } = $.ui.resolve({ ...e, surface: e.surface as 'desktop' | 'vscode' })
       return (
-        <Box alignSelf="flex-start">
-          {picture}
-          <Box position="absolute" top={0} left={0} width={gridCols} height={gridRows} flexDirection="column">
-            {Array.from({ length: 8 }, (_, row) => (
-              <Box key={`row${row}`} flexDirection="row" flexGrow={1}>
-                {Array.from({ length: 8 }, (_, c) => {
-                  const sq = squares[row * 8 + c] ?? ''
-                  return (
-                    <Box key={`cell-${sq}`} flexGrow={1} justifyContent="center" alignItems="center">
+        <Box flexDirection="column" alignSelf="flex-start">
+          {Array.from({ length: 8 }, (_, row) => (
+            <Box key={`tr${row}`} flexDirection="row">
+              {Array.from({ length: 8 }, (_, c) => {
+                const sq = squares[row * 8 + c] ?? ''
+                const isLight = (row + c) % 2 === 0
+                const pair = TILE[markOf(sq)]
+                const bg = pair ? pair[isLight ? 0 : 1] : isLight ? '#ebecd0' : '#739552'
+                const labelColor = isLight ? '#739552' : '#ebecd0'
+                const source = tileSvg({
+                  piece: board[sq],
+                  dot: chosen.includes(sq) ? (board[sq] ? 'capture' : 'move') : undefined,
+                  isLifted: sq === g.selected,
+                  hasArrived: sq === renderedSlide && arrivedRecently,
+                  rank: c === 0 ? sq[1] : undefined,
+                  file: row === 7 ? sq[0] : undefined,
+                  labelColor,
+                })
+                return (
+                  <Box key={`t-${sq}`} width={cw} height={ch} backgroundColor={bg} justifyContent="center" alignItems="center">
+                    <Svg source={source} alt={board[sq] ? `${sq} ${board[sq]}` : sq} width={tilePx} height={tilePx} />
+                    <Box position="absolute" top={0} left={0} width={cw} height={ch}>
                       <Button key={sq} plain onPress={() => tap($, sq)}>
                         <Text>{blank}</Text>
                       </Button>
                     </Box>
-                  )
-                })}
-              </Box>
-            ))}
-          </Box>
+                  </Box>
+                )
+              })}
+            </Box>
+          ))}
         </Box>
       )
     }
@@ -379,7 +404,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
           : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
         const { Svg } = $.ui.resolve({ ...e, surface: 'desktop' })
         // Click a piece on the board, then its square.
-        boardTree = clickableBoard(<Svg source={source} alt={alt} width={px} />, px)
+        boardTree = tiledBoard(px)
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
         const vsPx = isBand
@@ -388,7 +413,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
         // A phone fits the picture to its width; VS Code sizes it to the pane.
         boardTree = e.surface === 'mobile'
           ? (isBand ? <Svg source={source} alt={alt} width={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} height={Math.max(160, Math.min(Math.round(cols * 7), bandPx))} /> : <Svg source={source} alt={alt} />)
-          : clickableBoard(<Svg source={source} alt={alt} width={vsPx} />, vsPx)
+          : tiledBoard(vsPx)
       }
       // Tap buttons: the way to move where a drag cannot reach the board, and a
       // second way everywhere else.
