@@ -2,11 +2,13 @@
 
 A Claude Code mod that keeps you thinking between prompts instead of reaching for your phone.
 
-When you send a prompt, a **Chess break** pane opens beside the conversation with one of 682
-mate-in-1 or mate-in-2 puzzles, drawn as a full chess board that fills the pane (drag its edge
-or click its expand button for a bigger board; **Bigger** and **Smaller** fine-tune it). When
-Claude replies, **Claude's done** appears with **Back to conversation**, which closes the pane, and
-**Finish puzzle**, which keeps it open. `/chess` opens the pane any time.
+When you send a message, the mod asks Claude to open the **chess board page** first thing, so it
+appears beside the conversation while Claude works: one of 682 mate-in-1 or mate-in-2 puzzles with
+real drag and drop, move sounds and animations. A **Play a puzzle** link above the prompt box
+opens it too. When Claude replies, a notification tells you it's done.
+
+The board page is `board/index.html`, published as a claude.ai artifact. `/chess` also opens a
+simpler board in a side pane inside Claude Code.
 
 How you move, by where you run Claude Code:
 

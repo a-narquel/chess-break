@@ -156,14 +156,26 @@ test('one click that reaches both the drag layer and the button counts once', as
   await ui2.unmount()
 })
 
-test('a prompt opens the board in the side pane', async ($, on) => {
+test('each message asks Claude to open the board, and the band links it while Claude works', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
-  on('prompt.submit', (_, e) => ({ text: e.text }))
-  on('ui.panes', () => ({ value: [] }))
-  let opened = ''
-  on('ui.open', (_, e) => { opened = e.id; return { value: { isPlaced: true } } })
+  let seen: readonly string[] = []
+  on('prompt.submit', (_, e) => { seen = e.context ?? []; return { text: e.text } })
+  on('ui.render', ($, e) => { const { Text } = $.ui.resolve(e); return <Text>engine</Text> })
   await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
-  expect(opened).toBe('chess-break')
+  expect(seen.join(' ')).toContain('https://claude.ai/artifact/EgTojojUx9aEE2skBVyh5X')
+  const band = await $.ui.mount({
+    plugin: 'chess-break', component: 'AbovePrompt', requestId: 'band', surface: 'desktop',
+    props: { hasSurvey: false, isCollapsed: false, isWorking: true, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 9 }, view: {} },
+  })
+  expect(await band.find({ type: 'Link' })).toBeTruthy()
+  await band.unmount()
+})
+
+test('a slash command gets no note', async ($, on) => {
+  let seen: readonly string[] = []
+  on('prompt.submit', (_, e) => { seen = e.context ?? []; return { text: e.text } })
+  await $.prompt.submit({ text: '/help', command: { name: 'help', args: '' }, wait: false, origin: { kind: 'composer' } } as never)
+  expect(seen.length).toBe(0)
 })
 
 test('Bigger and Smaller resize the board and are remembered', async ($, on) => {
