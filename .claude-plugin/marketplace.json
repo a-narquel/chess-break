@@ -1,0 +1,5 @@
+{
+  "name": "chess-break",
+  "owner": { "name": "a-narquel" },
+  "plugins": [{ "name": "chess-break", "source": "./" }]
+}
