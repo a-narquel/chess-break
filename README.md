@@ -15,7 +15,7 @@ How you move, by where you run Claude Code:
 | VS Code, phone app | drawn board | tap a piece button, then a square button |
 | Terminal | board in text cells | drag or click with the mouse |
 
-Your streak and place in the puzzle set are kept between sessions.  opens the pane.
+Your streak and place in the puzzle set are kept between sessions. `/chess` opens the pane.
 
 Puzzles come from computer self-play, each checked with python-chess to have exactly one solution.
 
