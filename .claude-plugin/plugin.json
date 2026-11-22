@@ -1,1 +1,7 @@
-{ "name": "chess-break", "version": "0.1.0", "description": "Mate-in-1 and mate-in-2 chess puzzles in a pane beside the chat while Claude works", "types": "./types/index.d.ts" }
+{
+  "name": "chess-break",
+  "version": "0.1.0",
+  "description": "Mate-in-1 and mate-in-2 chess puzzles in a pane beside the chat while Claude works",
+  "types": "./types/index.d.ts",
+  "license": "GPL-2.0-or-later"
+}

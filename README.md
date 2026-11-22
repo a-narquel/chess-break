@@ -37,3 +37,10 @@ claude plugin install chess-break --marketplace a-narquel/chess-break
 ```
 
 In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `a-narquel/chess-break`, then Add plugin.
+
+## Credits and license
+
+The chess pieces are the Cburnett set by [Colin M.L. Burnett](https://en.wikipedia.org/wiki/User:Cburnett),
+as shipped by [Lichess](https://github.com/lichess-org/lila), licensed GPL-2.0-or-later.
+chess-break is therefore released under the GNU General Public License, version 2 or (at your
+option) any later version: see `LICENSE`.
