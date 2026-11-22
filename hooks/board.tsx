@@ -25,6 +25,7 @@ const LEFT = 2
 const Board: ClientModule<BoardProps, Local> = (props, surface) => {
   const { Box, Text } = surface.elements
   const { cellW, cellH } = props
+  const size = cellH >= 3 ? 'title' : cellH === 2 ? 'heading' : 'body'
   const drag = surface.state?.drag ?? null
 
   const at = (x: number, y: number) => {
@@ -63,7 +64,7 @@ const Board: ClientModule<BoardProps, Local> = (props, surface) => {
       const lifted = drag !== null && i === drag.from
       squares.push(
         <Box key={`s${i}`} width={cellW} height={cellH} backgroundColor={bg} justifyContent="center" alignItems="center">
-          <Text color={props.white[i] ? '#ffffff' : '#111111'} bold dimColor={lifted}>
+          <Text color={props.white[i] ? '#ffffff' : '#111111'} bold dimColor={lifted} size={size}>
             {props.glyphs[i] || ' '}
           </Text>
         </Box>,
@@ -83,7 +84,7 @@ const Board: ClientModule<BoardProps, Local> = (props, surface) => {
     drag === null ? null : (
       <Box position="absolute" left={Math.max(0, drag.x - Math.floor(cellW / 2))} top={Math.max(0, drag.y - Math.floor(cellH / 2))}
         width={cellW} height={cellH} justifyContent="center" alignItems="center">
-        <Text color={props.white[drag.from] ? '#ffffff' : '#111111'} bold>
+        <Text color={props.white[drag.from] ? '#ffffff' : '#111111'} bold size={size}>
           {props.glyphs[drag.from]}
         </Text>
       </Box>

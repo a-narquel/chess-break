@@ -50,7 +50,7 @@ async function save($: EngineInterface) {
 }
 
 function open($: EngineInterface) {
-  return $.ui.open({ id: PANE, title: TITLE })
+  return $.ui.open({ id: PANE, title: TITLE, columns: 90 })
 }
 
 async function move($: EngineInterface, from: string, to: string) {
@@ -176,10 +176,13 @@ export const register: Register = on => {
     const hint = g.hinted && !g.isSolved ? expected(p, g)[0]?.slice(0, 2) : undefined
     const squares = Array.from({ length: 64 }, (_, i) => squareAt(i, flip))
     const marks = squares.map(sq => (sq === g.selected ? 'sel' : sq === hint ? 'hint' : last.includes(sq) ? 'last' : ''))
+    // A text cell is about 2.4 times taller than wide, so a square is 2.4 columns per row.
+    // Fill the pane's width, but leave room under the board for the text and buttons.
     const cols = e.props.bodyColumns ?? 40
-    const cw = Math.max(3, Math.min(7, Math.floor((cols - 2) / 8)))
-    const cellW = cw % 2 === 0 ? cw - 1 : cw
-    const cellH = Math.max(1, Math.round(cellW / 2.3))
+    const rowsFree = Math.max(10, (e.props.scroll?.bodyRows ?? 40) - 10)
+    const byWidth = Math.floor((cols - 2) / 8)
+    const cellH = Math.max(1, Math.min(Math.round(byWidth / 2.4), Math.floor(rowsFree / 8)))
+    const cellW = Math.max(3, Math.min(byWidth, Math.round(cellH * 2.4)))
     const side = toMove === 'w' ? 'White' : 'Black'
 
     const statusLine =
