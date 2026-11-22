@@ -395,13 +395,18 @@ function showState(text, kind) {
 }
 let lastState = null;
 (async () => {
-  let db = null;
+  let db = null, user = null;
   try { db = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch { db = null; }
-  if (!db) return; // no notepad here: the board works on its own
+  try { user = window.claude && window.claude.use ? await window.claude.use("user") : null; } catch { user = null; }
+  if (!db || !user) return; // no notepad here: the board works on its own
+  // Each person's Claude writes to that person's own private corner.
+  let uid = null;
+  try { uid = await user.id(); } catch { uid = null; }
+  if (!uid) return;
   const slow = setTimeout(() => showState("Waiting for Claude's status…"), 10000);
   // Each message adds a "working" note and, when the reply is done, a "done"
   // note, numbered by time: the newest note is Claude's state now.
-  db.collection("status").orderBy("at", "desc").limit(1).onSnapshot(snap => {
+  db.collection("data/users/" + uid + "/chess/status").orderBy("at", "desc").limit(1).onSnapshot(snap => {
     if (!snap.fromCache) clearTimeout(slow);
     const top = snap.docs && snap.docs[0];
     const s = top ? top.data() : null;

@@ -11,12 +11,12 @@ import { boardSvg, tileSvg } from './svg'
 const PANE = 'chess-break'
 const BOARD = 'https://claude.ai/artifact/EgTojojUx9aEE2skBVyh5X'
 // Read by the model with each message the person sends: open the board at
-// once, and note "working" and then "done" on the board's notepad, so the
-// board can say when the reply is ready. `at` orders the notes.
+// once, and note "working" and then "done" in the person's own private corner of
+// the board's notepad, so the board can say when the reply is ready. `at` orders them.
 function boardNote(at: number, chat: string): string {
   const link = chat ? `,"chat":"${chat}"` : ''
   const note = (state: string, n: number) =>
-    `ArtifactData action "set", url ${BOARD}, collection "status", doc_id "t${n}-${state}", data {"state":"${state}","at":${n}${link}}`
+    `ArtifactData action "set", url ${BOARD}, collection "data/users/me/chess/status", doc_id "t${n}-${state}", data {"state":"${state}","at":${n}${link}}`
   return (
     'The chess-break mod is on. First, before anything else this turn: if you have the Artifact tool, ' +
     `call it with action "open" and url ${BOARD}; then, if you have the ArtifactData tool, call ${note('working', at)}. ` +
