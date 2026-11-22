@@ -327,14 +327,21 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
     // The board picture with a see-through button over each square, laid out in
     // shares of the picture so it lines up at any size: a click on a square is
     // a press of its button. A square's blank label is sized to fill the square.
+    // The board picture with a see-through button over each square. The grid
+    // has a fixed size in text cells (about 8.3 by 19.5 pixels in the app),
+    // matched to the picture's pixels: a share-based size comes out empty in the
+    // browser. Each button's blank label fills its square, so a click anywhere on
+    // a square presses it.
     const clickableBoard = (picture: ReturnType<typeof Box>, sizePx: number) => {
-      const blankCols = Math.max(2, Math.floor(sizePx / 8 / 8.3) - 1)
-      const blankRows = Math.max(1, Math.floor(sizePx / 8 / 20))
+      const gridCols = Math.max(8, Math.round(sizePx / 8.33))
+      const gridRows = Math.max(8, Math.round(sizePx / 19.5))
+      const blankCols = Math.max(1, Math.floor(gridCols / 8) - 1)
+      const blankRows = Math.max(1, Math.floor(gridRows / 8))
       const blank = Array.from({ length: blankRows }, () => '\u00a0'.repeat(blankCols)).join('\n')
       return (
         <Box alignSelf="flex-start">
           {picture}
-          <Box position="absolute" top={0} left={0} right={0} bottom={0} flexDirection="column">
+          <Box position="absolute" top={0} left={0} width={gridCols} height={gridRows} flexDirection="column">
             {Array.from({ length: 8 }, (_, row) => (
               <Box key={`row${row}`} flexDirection="row" flexGrow={1}>
                 {Array.from({ length: 8 }, (_, c) => {
@@ -371,10 +378,8 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
           ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, bandPx, 1100)))
           : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
         const { Svg } = $.ui.resolve({ ...e, surface: 'desktop' })
-        // No layer over the picture here: in the browser a covering layer takes
-        // the clicks meant for the buttons and passes on nothing. Moves are made
-        // with the piece buttons under the board.
-        boardTree = <Svg source={source} alt={alt} width={px} />
+        // Click a piece on the board, then its square.
+        boardTree = clickableBoard(<Svg source={source} alt={alt} width={px} />, px)
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
         const vsPx = isBand
@@ -387,7 +392,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       }
       // Tap buttons: the way to move where a drag cannot reach the board, and a
       // second way everywhere else.
-      if (!g.isSolved) {
+      if (!g.isSolved && e.surface === 'mobile') {
         const sel = g.selected
         const pieces = squares.filter(sq => own[squares.indexOf(sq)] && movesFrom(sq).length > 0)
         picker = sel === null ? (
@@ -447,7 +452,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       ) : null
 
     const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
-    const prompt = g.message || (e.surface === 'terminal' ? 'Drag a piece, or click it and then its square.' : 'Pick a piece below, then the square it goes to.')
+    const prompt = g.message || (e.surface === 'terminal' ? 'Drag a piece, or click it and then its square.' : e.surface === 'mobile' ? 'Tap a piece below, then where it goes.' : 'Click a piece, then the square it goes to.')
 
     const title = (
       <Text bold>
@@ -510,11 +515,11 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       <Box flexDirection="column" gap={1}>
         {banner}
         {title}
-        {boardTree}
         <Text color={toneColor}>{prompt}</Text>
-        {picker}
         {buttons}
         {score}
+        {boardTree}
+        {picker}
       </Box>
     )
 }

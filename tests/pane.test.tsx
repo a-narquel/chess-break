@@ -56,18 +56,19 @@ test('a wrong drag is refused and resets nothing else', async ($, on) => {
   await ui.unmount()
 })
 
-test('desktop: in the browser the piece buttons play, and the picked piece lifts', async ($, on) => {
+test('desktop: click a piece on the board, it lifts, click its square, it glides', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
   on('clock.now', () => ({ value: 5000 }))
   const p = PUZZLES[0]!
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  await ui.press({ key: `p-${p.a[0]!.slice(0, 2)}` })
+  expect(await ui.find({ type: 'Button', key: `p-${p.a[0]!.slice(0, 2)}` })).toBeFalsy()
+  await ui.press({ key: p.a[0]!.slice(0, 2) })
   const svg = (await ui.find({ type: 'Svg' })) as { props?: { source?: string } } | undefined
   expect(svg?.props?.source ?? '').toContain('<ellipse')
-  await ui.press({ key: `t-${p.a[0]!.slice(2, 4)}` })
+  await ui.press({ key: p.a[0]!.slice(2, 4) })
   if (p.n === 2) {
-    await ui.press({ key: `p-${p.b![0]!.slice(0, 2)}` })
-    await ui.press({ key: `t-${p.b![0]!.slice(2, 4)}` })
+    await ui.press({ key: p.b![0]!.slice(0, 2) })
+    await ui.press({ key: p.b![0]!.slice(2, 4) })
   }
   expect((await ui.find({ type: 'Text', text: /Checkmate/ }))?.text).toContain('Checkmate')
   const after = (await ui.find({ type: 'Svg' })) as { props?: { source?: string } } | undefined
