@@ -371,20 +371,10 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
           ? Math.round(Math.max(160, Math.min(sideBySide ? (cols - 34) * 8.4 : cols * 8.4 - 8, bandPx, 1100)))
           : Math.round(Math.max(220, Math.min(panePx * z, 1600)))
         const { Svg } = $.ui.resolve({ ...e, surface: 'desktop' })
-        // The drag layer: where the app passes the pointer to mods (the desktop
-        // app), a drag or a click on the board plays; where it does not (the
-        // browser), the piece buttons under the board do.
-        const { Client } = $.ui.resolve({ ...e, surface: 'desktop' })
-        const layerCols = Math.max(8, Math.round(px / 8.3))
-        const layerRows = Math.max(8, Math.round(px / 20))
-        boardTree = (
-          <Box alignSelf="flex-start">
-            <Svg source={source} alt={alt} width={px} />
-            <Box position="absolute" top={0} left={0} width={layerCols} height={layerRows}>
-              <Client key="board" module="./board.tsx" props={layer} width={layerCols} height={layerRows} />
-            </Box>
-          </Box>
-        )
+        // No layer over the picture here: in the browser a covering layer takes
+        // the clicks meant for the buttons and passes on nothing. Moves are made
+        // with the piece buttons under the board.
+        boardTree = <Svg source={source} alt={alt} width={px} />
       } else {
         const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
         const vsPx = isBand
@@ -457,7 +447,7 @@ async function drawGame($: EngineInterface, e: RenderInput<'Pane' | 'AbovePrompt
       ) : null
 
     const toneColor = g.tone === 'good' ? '#4cc27f' : g.tone === 'bad' ? '#e0705c' : undefined
-    const prompt = g.message || (e.surface === 'mobile' ? 'Tap a piece below, then where it goes.' : 'Drag a piece, or pick it below and then its square.')
+    const prompt = g.message || (e.surface === 'terminal' ? 'Drag a piece, or click it and then its square.' : 'Pick a piece below, then the square it goes to.')
 
     const title = (
       <Text bold>

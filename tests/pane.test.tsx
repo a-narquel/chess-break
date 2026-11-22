@@ -56,26 +56,6 @@ test('a wrong drag is refused and resets nothing else', async ($, on) => {
   await ui.unmount()
 })
 
-test('desktop: drag layer over the board, piece buttons under it', async ($, on) => {
-  on('store.set', () => ({ value: undefined }))
-  let t = 0
-  on('clock.now', () => ({ value: (t += 1000) }))
-  const p = PUZZLES[0]!
-  const flip = parseFen(p.fen).turn === 'b'
-  const idx = (sq: string) => {
-    const f = FILES.indexOf(sq[0]!), r = Number(sq[1])
-    return (flip ? r - 1 : 8 - r) * 8 + (flip ? 7 - f : f)
-  }
-  // A drag the desktop app reports through the layer plays the move.
-  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ type: 'Svg' })).toBeTruthy()
-  const drag = async (uci: string) => ui.post({ type: 'move', from: idx(uci.slice(0, 2)), to: idx(uci.slice(2, 4)) })
-  await drag(p.a[0]!)
-  if (p.n === 2) await drag(p.b![0]!)
-  expect((await ui.find({ type: 'Text', text: /Checkmate/ }))?.text).toContain('Checkmate')
-  await ui.unmount()
-})
-
 test('desktop: in the browser the piece buttons play, and the picked piece lifts', async ($, on) => {
   on('store.set', () => ({ value: undefined }))
   on('clock.now', () => ({ value: 5000 }))
