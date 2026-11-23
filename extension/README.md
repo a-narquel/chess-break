@@ -13,3 +13,10 @@ new one, and with **Stop me when Claude replies** ticked, Claude's reply switche
 
 It asks for the `tabs` permission (to find and switch to your Claude tab) and runs only on
 claude.ai pages, where the board lives. Nothing is sent anywhere.
+
+## Publishing to the stores
+
+`python3 tools/package_extension.py` builds `dist/chess-break-chrome.zip` (Chrome Web Store:
+Chrome, Brave, Edge, Opera) and `dist/chess-break-firefox.zip` (Firefox Add-ons). The listing
+text, permission justifications and privacy answers are in `store/STORE.md`; the screenshot and
+icon are in `store/` and `icons/`.
